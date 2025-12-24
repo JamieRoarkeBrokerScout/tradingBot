@@ -1219,7 +1219,7 @@ def build_profile_args(profile: str) -> Dict:
             max_position_units=10,
             per_trade_sl=5.0,
             per_trade_tp=15.0,
-            max_spread_pips=0.5,
+            max_spread_pips=1.5,
             trailing_mode="R_trailing",
             use_session_filter=True,
             session_start_hour=13,

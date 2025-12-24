@@ -62,7 +62,7 @@ def get_stats():
 
 @app.route('/api/bot/start', methods=['POST'])
 def start_bot():
-    """Start the trading bot with custom parameters"""
+    """Start the trading bot with profile or custom parameters"""
     global bot_process, current_config
     
     if is_bot_running():
@@ -70,32 +70,45 @@ def start_bot():
     
     data = request.get_json() or {}
     
-    # Get parameters from request
-    instrument = data.get('instrument', 'NAS100_USD')
-    bar_length = data.get('bar_length', '3min')
-    units = data.get('units', 1)
-    threshold_k = data.get('threshold_k', 1.8)
-    per_trade_sl = data.get('per_trade_sl', 20.0)
-    per_trade_tp = data.get('per_trade_tp', 60.0)
-    
     try:
         python_exe = sys.executable
         
-        # Build command with custom parameters
-        cmd = [
-            python_exe, str(BOT_SCRIPT),
-            '--instrument', instrument,
-            '--bar-length', bar_length,
-            '--units', str(units),
-            '--threshold-k', str(threshold_k),
-            '--per-trade-sl', str(per_trade_sl),
-            '--per-trade-tp', str(per_trade_tp),
-            '--use-session-filter',
-            '--session-start-hour', '13',
-            '--session-end-hour', '21',
-        ]
+        # Check if using a profile or custom settings
+        profile = data.get('profile')
         
-        print(f"🚀 Starting bot: {' '.join(cmd)}")
+        if profile:
+            # Use profile mode
+            cmd = [
+                python_exe, str(BOT_SCRIPT),
+                '--profile', profile
+            ]
+            print(f"🚀 Starting bot with profile: {profile}")
+        else:
+            # Use custom parameters mode
+            instrument = data.get('instrument', 'NAS100_USD')
+            bar_length = data.get('bar_length', '3min')
+            units = data.get('units', 1)
+            threshold_k = data.get('threshold_k', 1.8)
+            per_trade_sl = data.get('per_trade_sl', 20.0)
+            per_trade_tp = data.get('per_trade_tp', 60.0)
+            
+            cmd = [
+                python_exe, str(BOT_SCRIPT),
+                '--instrument', instrument,
+                '--bar-length', bar_length,
+                '--units', str(units),
+                '--threshold-k', str(threshold_k),
+                '--per-trade-sl', str(per_trade_sl),
+                '--per-trade-tp', str(per_trade_tp),
+                '--use-session-filter',
+                '--session-start-hour', '13',
+                '--session-end-hour', '21',
+            ]
+            print(f"🚀 Starting bot with custom settings")
+            print(f"   Instrument: {instrument}")
+            print(f"   Bar Length: {bar_length}")
+            print(f"   Units: {units}")
+            print(f"   SL: {per_trade_sl}, TP: {per_trade_tp}")
         
         bot_process = subprocess.Popen(
             cmd,
@@ -105,10 +118,6 @@ def start_bot():
         current_config = data
         
         print(f"✅ Bot started with PID {bot_process.pid}")
-        print(f"   Instrument: {instrument}")
-        print(f"   Bar Length: {bar_length}")
-        print(f"   Units: {units}")
-        print(f"   SL: {per_trade_sl}, TP: {per_trade_tp}")
         
         return jsonify({
             "status": "started",
@@ -172,31 +181,18 @@ if __name__ == '__main__':
     print("📊 Dashboard: http://localhost:3000")
     print("=" * 60)
     
-    # Auto-start bot with default config
+    # Auto-start bot with nas_a profile
     print("\n🤖 Auto-starting trading bot...")
     try:
         python_exe = sys.executable
         
         default_config = {
-            'instrument': 'NAS100_USD',
-            'bar_length': '3min',
-            'units': 1,
-            'threshold_k': 1.8,
-            'per_trade_sl': 20.0,
-            'per_trade_tp': 60.0
+            'profile': 'nas_a'
         }
         
         cmd = [
             python_exe, str(BOT_SCRIPT),
-            '--instrument', default_config['instrument'],
-            '--bar-length', default_config['bar_length'],
-            '--units', str(default_config['units']),
-            '--threshold-k', str(default_config['threshold_k']),
-            '--per-trade-sl', str(default_config['per_trade_sl']),
-            '--per-trade-tp', str(default_config['per_trade_tp']),
-            '--use-session-filter',
-            '--session-start-hour', '13',
-            '--session-end-hour', '21',
+            '--profile', 'nas_a'
         ]
         
         bot_process = subprocess.Popen(
@@ -205,7 +201,7 @@ if __name__ == '__main__':
         )
         
         current_config = default_config
-        print(f"✅ Bot auto-started with PID {bot_process.pid}\n")
+        print(f"✅ Bot auto-started with profile nas_a (PID {bot_process.pid})\n")
     except Exception as e:
         print(f"❌ Failed to auto-start bot: {e}\n")
     

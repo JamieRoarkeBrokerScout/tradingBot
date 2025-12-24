@@ -22,12 +22,13 @@ interface Stats {
 }
 
 interface BotConfig {
-    instrument: string
-    bar_length: string
-    units: number
-    threshold_k: number
-    per_trade_sl: number
-    per_trade_tp: number
+    profile?: string
+    instrument?: string
+    bar_length?: string
+    units?: number
+    threshold_k?: number
+    per_trade_sl?: number
+    per_trade_tp?: number
 }
 
 function App() {
@@ -36,16 +37,41 @@ function App() {
     const [botRunning, setBotRunning] = useState(false)
     const [loading, setLoading] = useState(true)
     const [showSettings, setShowSettings] = useState(false)
+    const [useProfile, setUseProfile] = useState(true)
 
-    const [config, setConfig] = useState<BotConfig>({
-        instrument: 'NAS100_USD',
-        bar_length: '3min',
-        units: 1,
-        threshold_k: 1.8,
-        per_trade_sl: 20.0,
-        per_trade_tp: 60.0
+    // Separate pending config (what user is editing) from current config (what bot is running)
+    const [pendingConfig, setPendingConfig] = useState<BotConfig>({
+        profile: 'nas_a'
+    })
+    const [currentConfig, setCurrentConfig] = useState<BotConfig>({
+        profile: 'nas_a'
     })
 
+    // Profile definitions
+    const profiles = [
+        {
+            value: 'nas_a',
+            label: 'NASDAQ-100',
+            description: 'NAS100_USD • 3min bars • 1 unit • SL: 20 / TP: 60'
+        },
+        {
+            value: 'xau_a',
+            label: 'Gold',
+            description: 'XAU_USD • 3min bars • 10 units • SL: 5 / TP: 15'
+        },
+        {
+            value: 'xag_a',
+            label: 'Silver',
+            description: 'XAG_USD • 1min bars • 400 units • SL: 0.4 / TP: 0.8'
+        },
+        {
+            value: 'xcu_a',
+            label: 'Copper',
+            description: 'XCU_USD • 3min bars • 10 units • SL: 150 / TP: 450'
+        },
+    ]
+
+    // Instrument presets for custom mode
     const instruments = [
         { value: 'NAS100_USD', label: 'NASDAQ-100', defaultUnits: 1, defaultSL: 20, defaultTP: 60, defaultBar: '3min' },
         { value: 'XAU_USD', label: 'Gold', defaultUnits: 10, defaultSL: 5, defaultTP: 15, defaultBar: '3min' },
@@ -78,8 +104,15 @@ function App() {
             const response = await fetch('http://localhost:5000/api/health')
             const data = await response.json()
             setBotRunning(data.bot_running)
+
+            // Only update current config (what's running), not pending config (what user is editing)
             if (data.config) {
-                setConfig(data.config)
+                setCurrentConfig(data.config)
+                // Only update pending if settings panel is closed
+                if (!showSettings) {
+                    setPendingConfig(data.config)
+                    setUseProfile(!!data.config.profile)
+                }
             }
         } catch (error) {
             setBotRunning(false)
@@ -91,7 +124,7 @@ function App() {
             await fetch('http://localhost:5000/api/bot/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
+                body: JSON.stringify(pendingConfig)
             })
             setTimeout(checkHealth, 1000)
             setShowSettings(false)
@@ -109,18 +142,48 @@ function App() {
         }
     }
 
+    const handleProfileChange = (profile: string) => {
+        setPendingConfig({ profile })
+    }
+
     const handleInstrumentChange = (instrument: string) => {
         const preset = instruments.find(i => i.value === instrument)
         if (preset) {
-            setConfig({
+            setPendingConfig({
                 instrument: preset.value,
                 bar_length: preset.defaultBar,
                 units: preset.defaultUnits,
-                threshold_k: config.threshold_k,
+                threshold_k: pendingConfig.threshold_k || 1.8,
                 per_trade_sl: preset.defaultSL,
                 per_trade_tp: preset.defaultTP
             })
         }
+    }
+
+    const switchMode = (toProfile: boolean) => {
+        setUseProfile(toProfile)
+        if (toProfile) {
+            setPendingConfig({ profile: 'nas_a' })
+        } else {
+            setPendingConfig({
+                instrument: 'NAS100_USD',
+                bar_length: '3min',
+                units: 1,
+                threshold_k: 1.8,
+                per_trade_sl: 20.0,
+                per_trade_tp: 60.0
+            })
+        }
+    }
+
+    // When opening settings, load current pending config
+    const handleOpenSettings = () => {
+        if (!showSettings) {
+            // Copy current config to pending when opening
+            setPendingConfig(currentConfig)
+            setUseProfile(!!currentConfig.profile)
+        }
+        setShowSettings(!showSettings)
     }
 
     useEffect(() => {
@@ -139,11 +202,13 @@ function App() {
             checkHealth()
         }, 5000)
         return () => clearInterval(interval)
-    }, [])
+    }, [showSettings]) // Re-subscribe when showSettings changes
 
     const winRate = stats.trades_today > 0
         ? ((stats.wins / stats.trades_today) * 100).toFixed(1)
         : '0.0'
+
+    const currentProfileLabel = profiles.find(p => p.value === currentConfig.profile)?.label || currentConfig.instrument
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white p-6">
@@ -164,7 +229,7 @@ function App() {
                         </button>
                     ) : (
                         <button
-                            onClick={() => setShowSettings(true)}
+                            onClick={handleOpenSettings}
                             className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-900/50"
                         >
                             <Activity className="w-5 h-5" />
@@ -178,7 +243,7 @@ function App() {
                         <RefreshCw className="w-4 h-4" />
                     </button>
                     <button
-                        onClick={() => setShowSettings(!showSettings)}
+                        onClick={handleOpenSettings}
                         className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition-colors"
                     >
                         <Settings className="w-4 h-4" />
@@ -196,77 +261,122 @@ function App() {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Instrument</label>
-                            <select
-                                value={config.instrument}
-                                onChange={(e) => handleInstrumentChange(e.target.value)}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                {instruments.map(inst => (
-                                    <option key={inst.value} value={inst.value}>{inst.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Bar Length</label>
-                            <select
-                                value={config.bar_length}
-                                onChange={(e) => setConfig({ ...config, bar_length: e.target.value })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="1min">1 Minute</option>
-                                <option value="3min">3 Minutes</option>
-                                <option value="5min">5 Minutes</option>
-                                <option value="15min">15 Minutes</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Units</label>
-                            <input
-                                type="number"
-                                value={config.units}
-                                onChange={(e) => setConfig({ ...config, units: Number(e.target.value) })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Threshold K</label>
-                            <input
-                                type="number"
-                                step="0.1"
-                                value={config.threshold_k}
-                                onChange={(e) => setConfig({ ...config, threshold_k: Number(e.target.value) })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Stop Loss</label>
-                            <input
-                                type="number"
-                                step="0.1"
-                                value={config.per_trade_sl}
-                                onChange={(e) => setConfig({ ...config, per_trade_sl: Number(e.target.value) })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Take Profit</label>
-                            <input
-                                type="number"
-                                step="0.1"
-                                value={config.per_trade_tp}
-                                onChange={(e) => setConfig({ ...config, per_trade_tp: Number(e.target.value) })}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
+                    {/* Mode Toggle */}
+                    <div className="flex gap-2 mb-6 bg-slate-800 p-1 rounded-lg">
+                        <button
+                            onClick={() => switchMode(true)}
+                            className={`flex-1 px-4 py-2 rounded-md transition-colors font-medium ${useProfile
+                                ? 'bg-blue-600 text-white'
+                                : 'text-slate-400 hover:text-white'
+                                }`}
+                        >
+                            Use Profile
+                        </button>
+                        <button
+                            onClick={() => switchMode(false)}
+                            className={`flex-1 px-4 py-2 rounded-md transition-colors font-medium ${!useProfile
+                                ? 'bg-blue-600 text-white'
+                                : 'text-slate-400 hover:text-white'
+                                }`}
+                        >
+                            Custom Settings
+                        </button>
                     </div>
+
+                    {useProfile ? (
+                        /* Profile Mode */
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-3">Select Profile</label>
+                            <div className="grid grid-cols-1 gap-3">
+                                {profiles.map(profile => (
+                                    <button
+                                        key={profile.value}
+                                        onClick={() => handleProfileChange(profile.value)}
+                                        className={`p-4 rounded-lg border-2 transition-all text-left ${pendingConfig.profile === profile.value
+                                            ? 'border-blue-500 bg-blue-500/10'
+                                            : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                                            }`}
+                                    >
+                                        <div className="font-semibold text-white mb-1">{profile.label}</div>
+                                        <div className="text-sm text-slate-400">{profile.description}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        /* Custom Settings Mode */
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Instrument</label>
+                                <select
+                                    value={pendingConfig.instrument}
+                                    onChange={(e) => handleInstrumentChange(e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {instruments.map(inst => (
+                                        <option key={inst.value} value={inst.value}>{inst.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Bar Length</label>
+                                <select
+                                    value={pendingConfig.bar_length}
+                                    onChange={(e) => setPendingConfig({ ...pendingConfig, bar_length: e.target.value })}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="1min">1 Minute</option>
+                                    <option value="3min">3 Minutes</option>
+                                    <option value="5min">5 Minutes</option>
+                                    <option value="15min">15 Minutes</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Units</label>
+                                <input
+                                    type="number"
+                                    value={pendingConfig.units}
+                                    onChange={(e) => setPendingConfig({ ...pendingConfig, units: Number(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Threshold K</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    value={pendingConfig.threshold_k}
+                                    onChange={(e) => setPendingConfig({ ...pendingConfig, threshold_k: Number(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Stop Loss</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    value={pendingConfig.per_trade_sl}
+                                    onChange={(e) => setPendingConfig({ ...pendingConfig, per_trade_sl: Number(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Take Profit</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    value={pendingConfig.per_trade_tp}
+                                    onChange={(e) => setPendingConfig({ ...pendingConfig, per_trade_tp: Number(e.target.value) })}
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div className="mt-6 flex gap-3 items-center">
                         <button
@@ -297,7 +407,7 @@ function App() {
                         {loading ? '...' : botRunning ? 'Running' : 'Stopped'}
                     </div>
                     {botRunning && (
-                        <div className="text-xs text-slate-400 mt-2 font-medium">{config.instrument}</div>
+                        <div className="text-xs text-slate-400 mt-2 font-medium">{currentProfileLabel}</div>
                     )}
                 </div>
 
