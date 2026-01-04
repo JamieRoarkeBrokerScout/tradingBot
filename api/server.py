@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 DB_PATH = Path(__file__).parent.parent / "database" / "trades.db"
-BOT_SCRIPT = Path(__file__).parent.parent / "src" / "momentum_trader_live.py"
+BOT_SCRIPT = Path(__file__).parent.parent / "bot" / "momentum_trader_live.py"
 
 # Global variable to track bot process
 bot_process = None

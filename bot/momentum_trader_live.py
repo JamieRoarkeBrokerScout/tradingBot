@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional, Tuple
-import sqlite3
+
 import numpy as np
 import pandas as pd
 import tpqoa
@@ -124,7 +124,6 @@ class MomentumTraderLive:
         logs_dir: Path = Path("logs"),
         status_log_interval: float = 30.0,
     ) -> None:
-        self.db_path = Path(__file__).parent.parent / "database" / "trades.db"
         # Oanda API (already configured via tpqoa)
         self.api = api
 
@@ -320,48 +319,38 @@ class MomentumTraderLive:
         pl_points: float,
     ) -> None:
         """
-        Log the *closed* trade to SQLite database.
+        Log the *closed* trade as a single row with entry & exit info.
         """
         ts = self.trade_state
         if ts.entry_time is None or ts.entry_price is None or ts.position == 0:
             return
 
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                INSERT INTO trades (
-                    entry_time, exit_time, instrument, direction, entry_units,
-                    entry_price, exit_price, exit_reason, pl_points, pl_R, raw_pl,
-                    bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                ts.entry_time.isoformat(),
-                exit_time.isoformat(),
-                self.instrument,
-                ts.position,
-                ts.entry_units,
-                ts.entry_price,
-                exit_price,
-                exit_reason,
-                pl_points,
-                pl_R,
-                realized_pl,
-                self.bar_length_str,
-                self.momentum,
-                self.threshold_k,
-                self.per_trade_sl,
-                self.per_trade_tp,
-                self.trailing_mode,
-            ))
-            
-            conn.commit()
-            conn.close()
-            print(f"[db] trade logged to database", flush=True)
-            
-        except Exception as e:
-            print(f"[db] failed to log trade: {e}", flush=True)
+        day = exit_time.date()
+        self._ensure_trades_file(day)
+
+        direction = ts.position
+
+        row = [
+            ts.entry_time.isoformat(),
+            exit_time.isoformat(),
+            self.instrument,
+            direction,
+            ts.entry_units,
+            f"{ts.entry_price:.5f}",
+            f"{exit_price:.5f}",
+            exit_reason,
+            f"{pl_points:.5f}",
+            f"{pl_R:.5f}",
+            f"{realized_pl:.2f}",
+            self.bar_length_str,
+            self.momentum,
+            self.threshold_k,
+            self.per_trade_sl,
+            self.per_trade_tp,
+            self.trailing_mode,
+        ]
+        with self.trades_file_path.open("a", newline="") as f:
+            csv.writer(f).writerow(row)
 
     def _reset_trade_state(self) -> None:
         self.trade_state = TradeState()
@@ -1208,26 +1197,6 @@ def build_profile_args(profile: str) -> Dict:
             min_flip_strength=1.8,
         )
     
-    if profile == "xau_a":
-        # Gold (XAU_USD) profile (3min)
-        return dict(
-            instrument="XAU_USD",
-            bar_length="3min",
-            momentum=6,
-            threshold_k=1.7,
-            units=10,
-            max_position_units=10,
-            per_trade_sl=5.0,
-            per_trade_tp=15.0,
-            max_spread_pips=1.5,
-            trailing_mode="R_trailing",
-            use_session_filter=True,
-            session_start_hour=13,
-            session_end_hour=21,
-            export_ticks=True,
-            min_flip_strength=2.0,
-        )
-
 
     return {}
 
