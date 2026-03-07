@@ -28,6 +28,7 @@ logs/
 config/
 *.cfg
 .env
+frontend/.env
 
 # IDE
 .vscode/
