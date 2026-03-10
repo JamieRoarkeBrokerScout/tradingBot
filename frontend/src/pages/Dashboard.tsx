@@ -7,7 +7,7 @@ import { logout, type AuthSession } from '../auth';
 import { apiFetch } from '../api';
 import TokenSettings from '../components/TokenSettings';
 import TradeModal from '../components/TradeModal';
-import type { Trade, Stats, DisplayTrade, StrategiesResponse } from '../types';
+import type { Trade, Stats, DisplayTrade, StrategiesResponse, OpenTrade } from '../types';
 
 const STRATEGY_META = [
     {
@@ -102,6 +102,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     });
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);
     const [strategyError, setStrategyError] = useState<string | null>(null);
+    const [openTrades, setOpenTrades] = useState<OpenTrade[]>([]);
 
     const fetchStats = async () => {
         try { const r = await apiFetch('/api/stats'); if (r.ok) setStats(await r.json()); } catch {}
@@ -118,6 +119,9 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                 if (d.config?.profile) setCurrentProfile(d.config.profile as ProfileKey);
             }
         } catch { setBotRunning(false); }
+    };
+    const fetchOpenTrades = async () => {
+        try { const r = await apiFetch('/api/open_trades'); if (r.ok) setOpenTrades(await r.json()); } catch {}
     };
     const fetchStrategies = async () => {
         try {
@@ -168,8 +172,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     };
 
     useEffect(() => {
-        Promise.all([fetchStats(), fetchTrades(), checkHealth(), fetchStrategies()]);
-        const id = setInterval(() => { fetchStats(); fetchTrades(); checkHealth(); fetchStrategies(); }, 5000);
+        Promise.all([fetchStats(), fetchTrades(), checkHealth(), fetchStrategies(), fetchOpenTrades()]);
+        const id = setInterval(() => { fetchStats(); fetchTrades(); checkHealth(); fetchStrategies(); fetchOpenTrades(); }, 5000);
         return () => clearInterval(id);
     }, []);
 
@@ -391,8 +395,62 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         </div>
                     </section>
 
+                    {/* Open Positions */}
+                    <section>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                            <TrendingUp size={12} /> Open Positions
+                            <span className="ml-auto text-[9px] font-mono bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+                                {openTrades.length} open
+                            </span>
+                        </p>
+                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                            {openTrades.length === 0 ? (
+                                <p className="text-slate-400 text-center py-6 text-sm">No open positions</p>
+                            ) : (
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="border-b border-slate-100 bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                            <th className="text-left px-4 py-2.5">Instrument</th>
+                                            <th className="text-left px-4 py-2.5">Strategy</th>
+                                            <th className="text-left px-4 py-2.5">Side</th>
+                                            <th className="text-right px-4 py-2.5">Units</th>
+                                            <th className="text-right px-4 py-2.5">Entry</th>
+                                            <th className="text-right px-4 py-2.5">Opened</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {openTrades.map(t => (
+                                            <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-2.5 font-mono font-bold text-slate-800">{t.instrument}</td>
+                                                <td className="px-4 py-2.5 text-slate-500">{t.strategy}</td>
+                                                <td className="px-4 py-2.5">
+                                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                                                        t.direction > 0
+                                                            ? 'bg-emerald-100 text-emerald-700'
+                                                            : 'bg-rose-100 text-rose-600'
+                                                    }`}>
+                                                        {t.direction > 0 ? 'LONG' : 'SHORT'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.units.toFixed(0)}</td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.entry_price.toFixed(4)}</td>
+                                                <td className="px-4 py-2.5 text-right text-slate-400 font-mono">
+                                                    {new Date(t.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </section>
+
                     {/* Stats row */}
-                    <section className="grid grid-cols-3 gap-4">
+                    <section className="grid grid-cols-4 gap-4">
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Open Positions</p>
+                            <p className={`text-3xl font-mono font-bold ${openTrades.length > 0 ? 'text-blue-600' : 'text-slate-900'}`}>{openTrades.length}</p>
+                        </div>
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Trades Today</p>
                             <p className="text-3xl font-mono font-bold text-slate-900">{stats.trades_today}</p>

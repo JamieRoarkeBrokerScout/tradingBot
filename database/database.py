@@ -14,7 +14,7 @@ def _connect():
 
 
 def init_db():
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist, migrate schema if needed."""
     conn = _connect()
     cursor = conn.cursor()
 
@@ -61,16 +61,62 @@ def init_db():
         )
     """)
 
+    # ── user_tokens: one row per (user, bot) ─────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            bot_key TEXT NOT NULL DEFAULT 'legacy_bot',
             oanda_account_id TEXT NOT NULL,
             oanda_access_token TEXT NOT NULL,
             oanda_account_type TEXT NOT NULL DEFAULT 'practice',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id)
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id, bot_key)
+        )
+    """)
+
+    # ── Migration: add bot_key column if this is an old single-token table ───
+    cursor.execute("PRAGMA table_info(user_tokens)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "bot_key" not in cols:
+        cursor.execute("ALTER TABLE user_tokens RENAME TO _user_tokens_old")
+        cursor.execute("""
+            CREATE TABLE user_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                bot_key TEXT NOT NULL DEFAULT 'legacy_bot',
+                oanda_account_id TEXT NOT NULL,
+                oanda_access_token TEXT NOT NULL,
+                oanda_account_type TEXT NOT NULL DEFAULT 'practice',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                UNIQUE(user_id, bot_key)
+            )
+        """)
+        cursor.execute("""
+            INSERT INTO user_tokens
+                (user_id, bot_key, oanda_account_id, oanda_access_token,
+                 oanda_account_type, created_at, updated_at)
+            SELECT user_id, 'legacy_bot', oanda_account_id, oanda_access_token,
+                   oanda_account_type, created_at, updated_at
+            FROM _user_tokens_old
+        """)
+        cursor.execute("DROP TABLE _user_tokens_old")
+
+    # ── open_trades: live positions written by runner ────────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS open_trades (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_key   TEXT    NOT NULL UNIQUE,
+            strategy    TEXT    NOT NULL,
+            instrument  TEXT    NOT NULL,
+            direction   INTEGER NOT NULL,
+            units       REAL    NOT NULL,
+            entry_price REAL    NOT NULL,
+            entry_time  TEXT    NOT NULL
         )
     """)
 
@@ -91,25 +137,8 @@ def get_user_by_email(email: str) -> dict | None:
     return dict(row) if row else None
 
 
-def create_user(email: str, password_hash: str) -> int:
-    now = datetime.utcnow().isoformat()
-    conn = _connect()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
-        (email, password_hash, now),
-    )
-    user_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return user_id
-
-
 def seed_users(users: list[tuple[str, str]]):
-    """
-    Upsert users from a list of (email, password_hash) tuples.
-    Always updates the password_hash so a fresh hash from startup is stored.
-    """
+    """Upsert users from (email, password_hash) tuples."""
     now = datetime.utcnow().isoformat()
     conn = _connect()
     cursor = conn.cursor()
@@ -167,37 +196,99 @@ def delete_session(token: str):
 
 
 # ---------------------------------------------------------------------------
-# OANDA token helpers (per user_id integer FK)
+# OANDA token helpers — per (user_id, bot_key)
+# bot_key values: 'legacy_bot' | 'stat_arb' | 'momentum' | 'vol_premium'
 # ---------------------------------------------------------------------------
 
-def get_user_token(user_id: int) -> dict | None:
+ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium"]
+
+
+def get_user_token(user_id: int, bot_key: str = "legacy_bot") -> dict | None:
     conn = _connect()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM user_tokens WHERE user_id = ?", (user_id,))
+    cursor.execute(
+        "SELECT * FROM user_tokens WHERE user_id = ? AND bot_key = ?",
+        (user_id, bot_key),
+    )
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def upsert_user_token(user_id: int, account_id: str, access_token: str, account_type: str = "practice"):
+def get_all_user_tokens(user_id: int) -> dict[str, dict]:
+    """Return a dict keyed by bot_key for every configured bot."""
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_tokens WHERE user_id = ?", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return {row["bot_key"]: dict(row) for row in rows}
+
+
+def upsert_user_token(user_id: int, bot_key: str,
+                      account_id: str, access_token: str,
+                      account_type: str = "practice") -> None:
     now = datetime.utcnow().isoformat()
     conn = _connect()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id FROM user_tokens WHERE user_id = ?", (user_id,)
+        """INSERT INTO user_tokens
+               (user_id, bot_key, oanda_account_id, oanda_access_token,
+                oanda_account_type, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, bot_key) DO UPDATE SET
+               oanda_account_id   = excluded.oanda_account_id,
+               oanda_access_token = excluded.oanda_access_token,
+               oanda_account_type = excluded.oanda_account_type,
+               updated_at         = excluded.updated_at""",
+        (user_id, bot_key, account_id, access_token, account_type, now, now),
     )
-    if cursor.fetchone():
-        cursor.execute(
-            "UPDATE user_tokens SET oanda_account_id=?, oanda_access_token=?, oanda_account_type=?, updated_at=? WHERE user_id=?",
-            (account_id, access_token, account_type, now, user_id),
-        )
-    else:
-        cursor.execute(
-            "INSERT INTO user_tokens (user_id, oanda_account_id, oanda_access_token, oanda_account_type, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-            (user_id, account_id, access_token, account_type, now, now),
-        )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Open-trade helpers (live positions written by runner subprocess)
+# ---------------------------------------------------------------------------
+
+def upsert_open_trade(
+    trade_key: str,
+    strategy: str,
+    instrument: str,
+    direction: int,
+    units: float,
+    entry_price: float,
+    entry_time: str,
+) -> None:
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO open_trades
+               (trade_key, strategy, instrument, direction, units, entry_price, entry_time)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(trade_key) DO UPDATE SET
+               entry_price = excluded.entry_price,
+               entry_time  = excluded.entry_time""",
+        (trade_key, strategy, instrument, direction, units, entry_price, entry_time),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_open_trade(trade_key: str) -> None:
+    conn = _connect()
+    conn.execute("DELETE FROM open_trades WHERE trade_key = ?", (trade_key,))
+    conn.commit()
+    conn.close()
+
+
+def get_open_trades() -> list[dict]:
+    conn = _connect()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM open_trades ORDER BY entry_time DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 if __name__ == "__main__":

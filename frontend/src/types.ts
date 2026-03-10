@@ -29,6 +29,17 @@ export type DisplayTrade = Trade & {
     stock: string;
 };
 
+export interface OpenTrade {
+    id: number;
+    trade_key: string;
+    strategy: string;
+    instrument: string;
+    direction: number;
+    units: number;
+    entry_price: number;
+    entry_time: string;
+}
+
 export interface StrategyState {
     enabled: boolean;
 }

@@ -15,7 +15,7 @@ if str(_project_root) not in sys.path:
 
 import bcrypt
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, g
+from flask import Flask, jsonify, request, g, send_from_directory
 from flask_cors import CORS
 
 # Load .env from project root
@@ -23,6 +23,9 @@ load_dotenv(_project_root / ".env")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+# Serve the built React frontend (production)
+_FRONTEND_DIST = _project_root / "frontend" / "dist"
 CORS(app, supports_credentials=True, origins="*")
 
 DB_PATH              = _project_root / "database" / "trades.db"
@@ -42,7 +45,8 @@ strategy_runner_process = None
 from database.database import (
     init_db, seed_users,
     get_user_by_email, get_session, create_session, delete_session,
-    get_user_token, upsert_user_token,
+    get_user_token, get_all_user_tokens, upsert_user_token, ALL_BOT_KEYS,
+    get_open_trades,
 )
 
 # Authorised users — plain passwords are hashed fresh at startup so there
@@ -140,49 +144,83 @@ def auth_session():
 @app.route("/api/user/tokens", methods=["GET"])
 @require_auth
 def get_tokens():
-    row = get_user_token(g.user_id)
-    if not row:
-        return jsonify({"configured": False})
-    return jsonify({
-        "configured": True,
-        "oanda_account_id": row["oanda_account_id"],
-        "oanda_account_type": row["oanda_account_type"],
-        "oanda_access_token_set": bool(row["oanda_access_token"]),
-    })
+    """Return credentials for all bots for this user."""
+    all_tokens = get_all_user_tokens(g.user_id)
+    result = {}
+    for bot_key in ALL_BOT_KEYS:
+        row = all_tokens.get(bot_key)
+        if row:
+            result[bot_key] = {
+                "configured":       True,
+                "oanda_account_id": row["oanda_account_id"],
+                "oanda_account_type": row["oanda_account_type"],
+                "oanda_access_token_set": bool(row["oanda_access_token"]),
+            }
+        else:
+            result[bot_key] = {"configured": False}
+    return jsonify(result)
 
 
 @app.route("/api/user/tokens", methods=["POST"])
 @require_auth
 def save_tokens():
-    data = request.get_json() or {}
-    account_id = (data.get("oanda_account_id") or "").strip()
+    data         = request.get_json() or {}
+    bot_key      = (data.get("bot_key") or "legacy_bot").strip()
+    account_id   = (data.get("oanda_account_id") or "").strip()
     access_token = (data.get("oanda_access_token") or "").strip()
     account_type = (data.get("oanda_account_type") or "practice").strip()
 
+    if bot_key not in ALL_BOT_KEYS:
+        return jsonify({"error": f"Unknown bot_key: {bot_key}"}), 400
     if not account_id or not access_token:
         return jsonify({"error": "oanda_account_id and oanda_access_token are required"}), 400
 
-    upsert_user_token(g.user_id, account_id, access_token, account_type)
-    return jsonify({"status": "saved"})
+    upsert_user_token(g.user_id, bot_key, account_id, access_token, account_type)
+    return jsonify({"status": "saved", "bot_key": bot_key})
 
 
 # ---------------------------------------------------------------------------
 # Credential resolution for bot
 # ---------------------------------------------------------------------------
 
-def _resolve_credentials(user_id: int):
-    row = get_user_token(user_id)
+def _resolve_credentials(user_id: int, bot_key: str = "legacy_bot"):
+    """Return (account_id, access_token, account_type) for a specific bot, or None."""
+    row = get_user_token(user_id, bot_key)
     if row:
         return row["oanda_account_id"], row["oanda_access_token"], row["oanda_account_type"]
 
-    # Fall back to .env
-    account_id = os.environ.get("OANDA_ACCOUNT_ID")
+    # Fall back to .env defaults
+    account_id   = os.environ.get("OANDA_ACCOUNT_ID")
     access_token = os.environ.get("OANDA_ACCESS_TOKEN")
     account_type = os.environ.get("OANDA_ACCOUNT_TYPE", "practice")
     if account_id and access_token:
         return account_id, access_token, account_type
 
     return None
+
+
+def _build_creds_map(user_id: int) -> dict:
+    """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots."""
+    env_creds = None
+    env_id    = os.environ.get("OANDA_ACCOUNT_ID")
+    env_tok   = os.environ.get("OANDA_ACCESS_TOKEN")
+    env_type  = os.environ.get("OANDA_ACCOUNT_TYPE", "practice")
+    if env_id and env_tok:
+        env_creds = {"account_id": env_id, "access_token": env_tok, "account_type": env_type}
+
+    creds_map = {}
+    for bot_key in ["stat_arb", "momentum", "vol_premium"]:
+        row = get_user_token(user_id, bot_key)
+        if row:
+            creds_map[bot_key] = {
+                "account_id":   row["oanda_account_id"],
+                "access_token": row["oanda_access_token"],
+                "account_type": row["oanda_account_type"],
+            }
+        elif env_creds:
+            creds_map[bot_key] = env_creds
+
+    return creds_map
 
 
 def _write_temp_cfg(account_id, access_token, account_type) -> str:
@@ -230,20 +268,29 @@ def _start_runner(user_id: int) -> None:
     global strategy_runner_process
     if is_runner_running():
         return
-    creds = _resolve_credentials(user_id)
-    if not creds:
-        raise ValueError("No OANDA credentials configured. Add your API token in Settings.")
-    account_id, access_token, account_type = creds
-    cfg_path = _write_temp_cfg(account_id, access_token, account_type)
+
+    creds_map = _build_creds_map(user_id)
+    if not creds_map:
+        raise ValueError("No OANDA credentials configured. Add your API tokens in Settings.")
+
+    # Write per-strategy credentials to a temp JSON file
+    import tempfile
+    creds_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", prefix="oanda_creds_", delete=False
+    )
+    json.dump(creds_map, creds_file)
+    creds_file.flush()
+    creds_file.close()
+
     cmd = [
         sys.executable, str(STRATEGY_RUNNER),
-        "--config", cfg_path,
-        "--state",  str(STRATEGY_STATE_FILE),
+        "--creds", creds_file.name,
+        "--state", str(STRATEGY_STATE_FILE),
     ]
     strategy_runner_process = subprocess.Popen(
         cmd,
         cwd=str(_project_root),
-        env={**__import__("os").environ, "PYTHONPATH": str(_project_root)},
+        env={**os.environ, "PYTHONPATH": str(_project_root)},
     )
     print(f"Strategy runner started (PID {strategy_runner_process.pid})")
 
@@ -274,6 +321,12 @@ def _get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@app.route("/api/open_trades", methods=["GET"])
+@require_auth
+def open_trades_route():
+    return jsonify(get_open_trades())
 
 
 @app.route("/api/trades", methods=["GET"])
@@ -318,7 +371,7 @@ def start_bot():
     if is_bot_running():
         return jsonify({"error": "Bot is already running", "pid": bot_process.pid}), 400
 
-    creds = _resolve_credentials(g.user_id)
+    creds = _resolve_credentials(g.user_id, "legacy_bot")
     if not creds:
         return jsonify({"error": "No OANDA credentials configured. Add your API token in Settings."}), 400
 
@@ -477,14 +530,29 @@ def stop_all_strategies():
 
 
 # ---------------------------------------------------------------------------
+# Frontend static file serving (production — files built by Dockerfile)
+# ---------------------------------------------------------------------------
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    if _FRONTEND_DIST.exists():
+        target = _FRONTEND_DIST / path
+        if path and target.exists() and target.is_file():
+            return send_from_directory(_FRONTEND_DIST, path)
+        return send_from_directory(_FRONTEND_DIST, "index.html")
+    return jsonify({"error": "Frontend not built"}), 404
+
+
+# ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     init_db()
     seed_users(SEED_USERS)
+    port = int(os.environ.get("PORT", 5000))
     print("=" * 60)
-    print("API Server starting on http://localhost:5000")
-    print("Dashboard: http://localhost:3000")
+    print(f"API Server starting on http://0.0.0.0:{port}")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
