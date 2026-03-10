@@ -17,7 +17,8 @@ COPY frontend/package*.json frontend/
 RUN cd frontend && npm ci
 
 COPY frontend/ frontend/
-RUN cd frontend && npm run build
+# Explicitly clear VITE_API_BASE so production build uses same-origin relative paths
+RUN cd frontend && VITE_API_BASE= npm run build
 
 # Copy the rest of the application
 COPY . .
