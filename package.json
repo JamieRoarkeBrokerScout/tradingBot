@@ -1,0 +1,17 @@
+{
+  "name": "trading-bot",
+  "version": "1.0.0",
+  "description": "Automated momentum trading bot with dashboard",
+  "scripts": {
+    "dev": "concurrently \"npm run api\" \"npm run frontend\"",
+    "api": "python3 api/server.py",
+    "frontend": "cd frontend && npm run dev",
+    "install-frontend": "cd frontend && npm install",
+    "install-python": "pip3 install -r requirements.txt",
+    "setup": "npm run install-python && npm run install-frontend",
+    "build": "cd frontend && npm run build"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

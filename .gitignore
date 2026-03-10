@@ -7,7 +7,6 @@ __pycache__/
 env/
 venv/
 *.egg-info/
-.pytest_cache/
 
 # Node
 node_modules/
@@ -18,34 +17,24 @@ frontend/build/
 # Database
 database/*.db
 database/*.db-journal
-*.sqlite
-*.sqlite3
 
-# Data folder - tick data and trade logs
+# Data - tick data and trade logs
 data/
-data/**
 
 # Logs
 logs/
-*.log
 
-# Config - DO NOT COMMIT CREDENTIALS
+# Config
 config/
 *.cfg
 .env
-/tmp/oanda.cfg
+frontend/.env
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 
 # OS
 .DS_Store
 Thumbs.db
-*.bak
-
-# Temporary files
-*.tmp
-.cache/

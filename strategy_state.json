@@ -1,0 +1,11 @@
+{
+  "stat_arb": {
+    "enabled": false
+  },
+  "momentum": {
+    "enabled": false
+  },
+  "vol_premium": {
+    "enabled": false
+  }
+}

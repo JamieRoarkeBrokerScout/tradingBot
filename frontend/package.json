@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "dev": "concurrently \"npm run api\" \"npm run frontend\"",
-        "api": "cd .. && python api/server.py",
+        "api": "cd .. && python -m api.server",
         "frontend": "vite",
         "build": "tsc && vite build"
     },
