@@ -224,9 +224,11 @@ def seed_tokens_from_env() -> None:
     Example:  JAMIE_STAT_ARB_ACCOUNT_ID, JAMIE_STAT_ARB_ACCESS_TOKEN
               JAMES_MOMENTUM_ACCOUNT_ID,  JAMES_MOMENTUM_ACCESS_TOKEN
     """
+    total = 0
     for email, prefix in _USER_ENV_PREFIX.items():
         user = get_user_by_email(email)
         if not user:
+            print(f"[seed_tokens] user not found in DB: {email}")
             continue
         user_id = user["id"]
         for bot_key, strat_key in _STRATEGY_ENV_KEY.items():
@@ -234,7 +236,15 @@ def seed_tokens_from_env() -> None:
             access_token = os.environ.get(f"{prefix}_{strat_key}_ACCESS_TOKEN")
             account_type = os.environ.get(f"{prefix}_{strat_key}_ACCOUNT_TYPE", "practice")
             if account_id and access_token:
-                upsert_user_token(user_id, bot_key, account_id, access_token, account_type)
+                try:
+                    upsert_user_token(user_id, bot_key, account_id, access_token, account_type)
+                    print(f"[seed_tokens] seeded user_id={user_id} ({email}) bot={bot_key}")
+                    total += 1
+                except Exception as exc:
+                    print(f"[seed_tokens] ERROR user_id={user_id} bot={bot_key}: {exc}")
+            else:
+                print(f"[seed_tokens] no env vars for {prefix}_{strat_key}_ACCOUNT_ID / ACCESS_TOKEN")
+    print(f"[seed_tokens] done — {total} tokens seeded")
 
 
 def _build_creds_map(user_id: int) -> dict:
