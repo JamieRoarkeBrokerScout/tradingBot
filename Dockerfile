@@ -8,7 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 
 WORKDIR /app
 
-# Copy everything first so any file change busts the cache correctly
+# Force full rebuild — increment to bust Railway's layer cache
+ARG CACHEBUST=v5
+RUN echo "Cache bust: $CACHEBUST"
+
+# Copy everything so any file change invalidates subsequent layers
 COPY . .
 
 # Python dependencies
@@ -22,4 +26,4 @@ RUN mkdir -p database
 
 EXPOSE 8080
 
-CMD ["python", "api/server.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "120", "api.server:app"]

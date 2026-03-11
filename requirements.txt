@@ -5,4 +5,5 @@ python-dotenv>=1.0
 pandas==2.0.2
 numpy==1.26.1
 v20==3.0.25.0
+gunicorn>=21.0
 git+https://github.com/yhilpisch/tpqoa.git

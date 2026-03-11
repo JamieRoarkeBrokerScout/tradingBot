@@ -540,7 +540,10 @@ def serve_frontend(path):
         target = _FRONTEND_DIST / path
         if path and target.exists() and target.is_file():
             return send_from_directory(_FRONTEND_DIST, path)
-        return send_from_directory(_FRONTEND_DIST, "index.html")
+        # Always re-fetch index.html so browsers pick up new JS filenames
+        resp = send_from_directory(_FRONTEND_DIST, "index.html")
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
     return jsonify({"error": "Frontend not built"}), 404
 
 
@@ -548,9 +551,11 @@ def serve_frontend(path):
 # Startup
 # ---------------------------------------------------------------------------
 
+# Run DB init + seed whether started via gunicorn or directly
+init_db()
+seed_users(SEED_USERS)
+
 if __name__ == "__main__":
-    init_db()
-    seed_users(SEED_USERS)
     port = int(os.environ.get("PORT", 5000))
     print("=" * 60)
     print(f"API Server starting on http://0.0.0.0:{port}")
