@@ -171,9 +171,13 @@ class StatArbStrategy(SafeguardsBase):
             atr_a = self._daily_atr(inst_a)
             atr_b = self._daily_atr(inst_b)
 
-            size_a = (nav * config.STAT_ARB_NAV_PCT) / price_a
-            size_b = (nav * config.STAT_ARB_NAV_PCT) / price_b
-            if size_a <= 0 or size_b <= 0:
+            stop_dist_a = config.STAT_ARB_STOP_ATR_MULT * atr_a
+            stop_dist_b = config.STAT_ARB_STOP_ATR_MULT * atr_b
+            size_a = (nav * config.STAT_ARB_NAV_PCT) / stop_dist_a if stop_dist_a > 0 else 0
+            size_b = (nav * config.STAT_ARB_NAV_PCT) / stop_dist_b if stop_dist_b > 0 else 0
+            if size_a < 1 or size_b < 1:
+                log.debug("[%s] skipping %s: size_a=%.3f size_b=%.3f both need >=1",
+                          self.strategy_name, pair_key, size_a, size_b)
                 continue
 
             stop_a = price_a - dir_a * config.STAT_ARB_STOP_ATR_MULT * atr_a

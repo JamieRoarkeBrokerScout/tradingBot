@@ -230,12 +230,15 @@ class MomentumStrategy(SafeguardsBase):
             if direction is None:
                 continue
 
-            units = (nav * config.MOMENTUM_NAV_PCT) / last_close if last_close > 0 else 0
-            if units <= 0:
-                continue
-
             stop = last_close - direction * config.MOMENTUM_STOP_ATR_MULT * last_atr
             tp   = last_close + direction * config.MOMENTUM_TP_ATR_MULT   * last_atr
+
+            stop_dist = abs(last_close - stop)
+            units = (nav * config.MOMENTUM_NAV_PCT) / stop_dist if stop_dist > 0 else 0
+            if units < 1:
+                log.debug("[%s] skipping %s: units %.3f < 1 (nav=%.0f, stop_dist=%.4f)",
+                          self.strategy_name, inst, units, nav, stop_dist)
+                continue
 
             sig = Signal(
                 instrument=inst, direction=direction, units=units,

@@ -151,8 +151,11 @@ class VolPremiumStrategy(SafeguardsBase):
                              self.strategy_name, config.VOL_MAX_EXPOSURE_PCT * 100)
                     return signals
 
-            units = (nav * config.VOL_NAV_PCT) / price if price > 0 else 0
-            if units <= 0:
+            stop_dist = config.VOL_STOP_ATR_MULT * atr
+            units = (nav * config.VOL_NAV_PCT) / stop_dist if stop_dist > 0 else 0
+            if units < 1:
+                log.debug("[%s] skipping entry: units %.3f < 1 (nav=%.0f, stop_dist=%.4f)",
+                          self.strategy_name, units, nav, stop_dist)
                 return signals
 
             stop = price + config.VOL_STOP_ATR_MULT * atr   # SHORT → stop above entry

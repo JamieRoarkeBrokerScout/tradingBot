@@ -72,23 +72,32 @@ def _get_nav(api) -> float:
         return 100_000.0
 
 
-def _submit(api, sig) -> None:
+def _submit(api, sig) -> bool:
     """
     Submit a Signal to OANDA with exponential backoff on HTTP 429.
+    Returns True if the order was accepted, False otherwise.
     This is the ONLY place broker calls happen — strategies never call
     the API directly.
     """
     action = sig.meta.get("action", "open")
     delay  = config.OANDA_BACKOFF_BASE
 
+    if action == "close":
+        trade_units = max(1, int(sig.units))
+    else:
+        signed_units = int(sig.units * sig.direction)
+        if signed_units == 0:
+            log.warning("[runner] skipping %s order — computed 0 units (raw=%.4f); "
+                        "check position sizing", sig.instrument, sig.units)
+            return False
+
     for attempt in range(config.OANDA_MAX_RETRIES):
         try:
             if action == "close":
-                api.close_trade(sig.instrument, int(sig.units))
+                api.close_trade(sig.instrument, trade_units)
             else:
-                signed_units = int(sig.units * sig.direction)
                 api.create_order(sig.instrument, units=signed_units)
-            return
+            return True
         except Exception as exc:
             exc_str = str(exc)
             if "429" in exc_str or "TooManyRequests" in exc_str:
@@ -98,7 +107,8 @@ def _submit(api, sig) -> None:
                 delay = min(delay * 2, config.OANDA_BACKOFF_MAX)
             else:
                 log.error("[runner] order error: %s", exc_str)
-                return
+                return False
+    return False
 
 
 # ─── State file ───────────────────────────────────────────────────────────────
@@ -226,7 +236,9 @@ class Runner:
                         if self.approve_signal(strategy, sig):
                             log.info("[runner] → %s %s %+d %.2f units",
                                      sig.strategy, sig.instrument, sig.direction, sig.units)
-                            _submit(api, sig)
+                            submitted = _submit(api, sig)
+                            if not submitted:
+                                continue
 
                             trade_key = f"{name}:{sig.instrument}"
                             action = sig.meta.get("action", "open")
