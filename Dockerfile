@@ -14,9 +14,6 @@ COPY . .
 # Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Guarantee API_BASE is empty (same-origin) regardless of any cached .env
-RUN printf "import { getStoredToken } from './auth';\n\nconst API_BASE = '';\n\nexport { API_BASE };\n\nexport function apiFetch(path: string, options?: RequestInit): Promise<Response> {\n    const token = getStoredToken();\n    const authHeader: HeadersInit = token ? { Authorization: \`Bearer \${token}\` } : {};\n    return fetch(\`\${API_BASE}\${path}\`, {\n        ...options,\n        headers: { ...authHeader, ...(options?.headers ?? {}) },\n    });\n}\n" > frontend/src/api.ts
-
 # Build frontend
 RUN cd frontend && npm ci && npm run build
 

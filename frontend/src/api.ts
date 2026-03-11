@@ -1,8 +1,9 @@
 import { getStoredToken } from './auth';
 
-// In production (Railway) Flask serves the frontend, so API calls are same-origin.
-// Set VITE_API_BASE in your local frontend/.env for dev (e.g. http://localhost:5000).
-const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+// Runtime detection: use same-origin in production, localhost:5000 in local dev.
+const API_BASE = window.location.hostname === 'localhost'
+    ? 'http://localhost:5000'
+    : '';
 
 export { API_BASE };
 
