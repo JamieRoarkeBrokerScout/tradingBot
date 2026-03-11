@@ -1,9 +1,8 @@
 import { getStoredToken } from './auth';
 
-// Runtime detection: use same-origin in production, localhost:5000 in local dev.
-const API_BASE = window.location.hostname === 'localhost'
-    ? 'http://localhost:5000'
-    : '';
+// Always use relative paths — Flask serves both API and frontend in production.
+// Local dev: Vite proxies /api/* to localhost:5000 (see vite.config.ts).
+const API_BASE = '';
 
 export { API_BASE };
 
