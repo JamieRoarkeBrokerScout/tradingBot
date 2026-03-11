@@ -8,20 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 
 WORKDIR /app
 
+# Copy everything first so any file change busts the cache correctly
+COPY . .
+
 # Python dependencies
-COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Frontend build (separate layer so it caches unless frontend changes)
-COPY frontend/package*.json frontend/
-RUN cd frontend && npm ci
+# Guarantee API_BASE is empty (same-origin) regardless of any cached .env
+RUN printf "import { getStoredToken } from './auth';\n\nconst API_BASE = '';\n\nexport { API_BASE };\n\nexport function apiFetch(path: string, options?: RequestInit): Promise<Response> {\n    const token = getStoredToken();\n    const authHeader: HeadersInit = token ? { Authorization: \`Bearer \${token}\` } : {};\n    return fetch(\`\${API_BASE}\${path}\`, {\n        ...options,\n        headers: { ...authHeader, ...(options?.headers ?? {}) },\n    });\n}\n" > frontend/src/api.ts
 
-COPY frontend/ frontend/
-# Explicitly clear VITE_API_BASE so production build uses same-origin relative paths
-RUN cd frontend && VITE_API_BASE= npm run build
-
-# Copy the rest of the application
-COPY . .
+# Build frontend
+RUN cd frontend && npm ci && npm run build
 
 # Database directory (mount a Railway volume here for persistence)
 RUN mkdir -p database
