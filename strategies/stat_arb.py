@@ -186,12 +186,14 @@ class StatArbStrategy(SafeguardsBase):
             sig_a = Signal(
                 instrument=inst_a, direction=dir_a, units=size_a,
                 stop_price=stop_a, strategy=self.strategy_name,
-                meta={"action": "open", "leg": "A", "pair": pair_key, "z": z},
+                meta={"action": "open", "leg": "A", "pair": pair_key, "z": z,
+                      "stop_dist": stop_dist_a},
             )
             sig_b = Signal(
                 instrument=inst_b, direction=dir_b, units=size_b,
                 stop_price=stop_b, strategy=self.strategy_name,
-                meta={"action": "open", "leg": "B", "pair": pair_key, "z": z},
+                meta={"action": "open", "leg": "B", "pair": pair_key, "z": z,
+                      "stop_dist": stop_dist_b},
             )
 
             if not (self.approve_trade(sig_a) and self.approve_trade(sig_b)):

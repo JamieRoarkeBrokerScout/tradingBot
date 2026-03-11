@@ -283,14 +283,14 @@ def _start_runner(user_id: int) -> None:
     creds_file.close()
 
     cmd = [
-        sys.executable, str(STRATEGY_RUNNER),
+        sys.executable, "-u", str(STRATEGY_RUNNER),
         "--creds", creds_file.name,
         "--state", str(STRATEGY_STATE_FILE),
     ]
     strategy_runner_process = subprocess.Popen(
         cmd,
         cwd=str(_project_root),
-        env={**os.environ, "PYTHONPATH": str(_project_root)},
+        env={**os.environ, "PYTHONPATH": str(_project_root), "PYTHONUNBUFFERED": "1"},
     )
     print(f"Strategy runner started (PID {strategy_runner_process.pid})")
 

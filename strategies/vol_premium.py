@@ -168,7 +168,8 @@ class VolPremiumStrategy(SafeguardsBase):
                 stop_price=stop,
                 tp_price=tp,
                 strategy=self.strategy_name,
-                meta={"action": "open", "iv_rv_ratio": iv_rv_ratio, "vix_est": estimated_vix},
+                meta={"action": "open", "iv_rv_ratio": iv_rv_ratio, "vix_est": estimated_vix,
+                      "stop_dist": stop_dist},
             )
 
             if not self.approve_trade(sig):

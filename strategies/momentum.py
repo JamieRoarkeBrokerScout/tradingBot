@@ -243,7 +243,8 @@ class MomentumStrategy(SafeguardsBase):
             sig = Signal(
                 instrument=inst, direction=direction, units=units,
                 stop_price=stop, tp_price=tp, strategy=self.strategy_name,
-                meta={"action": "open", "rsi": last_rsi, "atr": last_atr},
+                meta={"action": "open", "rsi": last_rsi, "atr": last_atr,
+                      "stop_dist": stop_dist},
             )
 
             if not self.approve_trade(sig):

@@ -90,9 +90,13 @@ class SafeguardsBase:
                 if dd >= config.HALT_DRAWDOWN_PCT:
                     blocks.append(f"drawdown={dd:.2%}")
 
-                size_pct = (signal.units * signal.stop_price) / _nav if signal.stop_price else 0
-                if size_pct > config.HALT_MAX_TRADE_SIZE_PCT:
-                    blocks.append(f"trade_size={size_pct:.2%}")
+                # Risk check: units × stop_distance / NAV (not notional / NAV)
+                # stop_dist is stored in signal.meta by each strategy
+                stop_dist = signal.meta.get("stop_dist", 0.0)
+                if stop_dist > 0:
+                    risk_pct = (signal.units * stop_dist) / _nav
+                    if risk_pct > config.HALT_MAX_TRADE_SIZE_PCT:
+                        blocks.append(f"trade_size={risk_pct:.2%}")
 
             if _open_pos >= config.HALT_MAX_OPEN_POSITIONS:
                 blocks.append(f"open_positions={_open_pos}")
