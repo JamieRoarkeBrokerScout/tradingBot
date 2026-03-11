@@ -199,15 +199,36 @@ def _resolve_credentials(user_id: int, bot_key: str = "legacy_bot"):
     return None
 
 
-def _build_creds_map(user_id: int) -> dict:
-    """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots."""
-    env_creds = None
-    env_id    = os.environ.get("OANDA_ACCOUNT_ID")
-    env_tok   = os.environ.get("OANDA_ACCESS_TOKEN")
-    env_type  = os.environ.get("OANDA_ACCOUNT_TYPE", "practice")
-    if env_id and env_tok:
-        env_creds = {"account_id": env_id, "access_token": env_tok, "account_type": env_type}
+# Per-strategy env var names — set these in Railway dashboard to avoid needing a volume
+_STRATEGY_ENV = {
+    "stat_arb":    ("STAT_ARB_ACCOUNT_ID",    "STAT_ARB_ACCESS_TOKEN",    "STAT_ARB_ACCOUNT_TYPE"),
+    "momentum":    ("MOMENTUM_ACCOUNT_ID",     "MOMENTUM_ACCESS_TOKEN",    "MOMENTUM_ACCOUNT_TYPE"),
+    "vol_premium": ("VOL_PREMIUM_ACCOUNT_ID",  "VOL_PREMIUM_ACCESS_TOKEN", "VOL_PREMIUM_ACCOUNT_TYPE"),
+}
 
+
+def _env_creds_for(bot_key: str) -> dict | None:
+    """Return credentials from environment variables for a given strategy, or None."""
+    id_key, tok_key, type_key = _STRATEGY_ENV[bot_key]
+    account_id   = os.environ.get(id_key)
+    access_token = os.environ.get(tok_key)
+    account_type = os.environ.get(type_key, "practice")
+    if account_id and access_token:
+        return {"account_id": account_id, "access_token": access_token, "account_type": account_type}
+    # Fall back to shared OANDA_* env vars
+    account_id   = os.environ.get("OANDA_ACCOUNT_ID")
+    access_token = os.environ.get("OANDA_ACCESS_TOKEN")
+    account_type = os.environ.get("OANDA_ACCOUNT_TYPE", "practice")
+    if account_id and access_token:
+        return {"account_id": account_id, "access_token": access_token, "account_type": account_type}
+    return None
+
+
+def _build_creds_map(user_id: int) -> dict:
+    """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots.
+
+    Priority: DB row (saved via UI) → per-strategy env var → shared OANDA_* env var.
+    """
     creds_map = {}
     for bot_key in ["stat_arb", "momentum", "vol_premium"]:
         row = get_user_token(user_id, bot_key)
@@ -217,8 +238,10 @@ def _build_creds_map(user_id: int) -> dict:
                 "access_token": row["oanda_access_token"],
                 "account_type": row["oanda_account_type"],
             }
-        elif env_creds:
-            creds_map[bot_key] = env_creds
+        else:
+            env = _env_creds_for(bot_key)
+            if env:
+                creds_map[bot_key] = env
 
     return creds_map
 
