@@ -101,8 +101,8 @@ class StatArbStrategy(SafeguardsBase):
             inst_a, inst_b = pair_key.split("/")
             try:
                 _, _, z, _, _ = self._fetch_metrics(inst_a, inst_b)
-            except Exception:
-                log.warning("[%s] could not compute z for %s; skipping exit", self.strategy_name, pair_key)
+            except Exception as exc:
+                log.warning("[%s] could not compute z for %s: %s; skipping exit", self.strategy_name, pair_key, exc)
                 continue
 
             age_days = (_utcnow() - pos.opened_at).total_seconds() / 86_400
@@ -144,8 +144,8 @@ class StatArbStrategy(SafeguardsBase):
 
             try:
                 closes_a, closes_b, z, corr, spread_std = self._fetch_metrics(inst_a, inst_b)
-            except Exception:
-                log.warning("[%s] fetch failed for %s; skipping", self.strategy_name, pair_key)
+            except Exception as exc:
+                log.warning("[%s] fetch failed for %s: %s", self.strategy_name, pair_key, exc)
                 continue
 
             # Filters
@@ -221,8 +221,16 @@ class StatArbStrategy(SafeguardsBase):
         hist_a = oanda_history(self._api, inst_a, start, end, "D")
         hist_b = oanda_history(self._api, inst_b, start, end, "D")
 
-        closes_a = hist_a["c"].astype(float).tail(config.STAT_ARB_LOOKBACK_DAYS)
-        closes_b = hist_b["c"].astype(float).tail(config.STAT_ARB_LOOKBACK_DAYS)
+        closes_a = hist_a["c"].astype(float)
+        closes_b = hist_b["c"].astype(float)
+
+        # Align on common dates — different instruments have different trading calendars
+        common = closes_a.index.intersection(closes_b.index)
+        closes_a = closes_a.loc[common].tail(config.STAT_ARB_LOOKBACK_DAYS)
+        closes_b = closes_b.loc[common].tail(config.STAT_ARB_LOOKBACK_DAYS)
+
+        if len(closes_a) < 30:
+            raise ValueError(f"insufficient aligned bars: {len(closes_a)}")
 
         log_a = np.log(closes_a.values)
         log_b = np.log(closes_b.values)
