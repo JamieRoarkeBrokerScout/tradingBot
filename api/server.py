@@ -199,36 +199,46 @@ def _resolve_credentials(user_id: int, bot_key: str = "legacy_bot"):
     return None
 
 
-# Per-strategy env var names — set these in Railway dashboard to avoid needing a volume
-_STRATEGY_ENV = {
-    "stat_arb":    ("STAT_ARB_ACCOUNT_ID",    "STAT_ARB_ACCESS_TOKEN",    "STAT_ARB_ACCOUNT_TYPE"),
-    "momentum":    ("MOMENTUM_ACCOUNT_ID",     "MOMENTUM_ACCESS_TOKEN",    "MOMENTUM_ACCOUNT_TYPE"),
-    "vol_premium": ("VOL_PREMIUM_ACCOUNT_ID",  "VOL_PREMIUM_ACCESS_TOKEN", "VOL_PREMIUM_ACCOUNT_TYPE"),
+# Maps each user email to an env var prefix.
+# Set JAMIE_STAT_ARB_ACCOUNT_ID etc. in Railway dashboard — persists forever,
+# no volume needed. Each user's credentials stay completely separate.
+_USER_ENV_PREFIX = {
+    "jamieroarke18@gmail.com": "JAMIE",
+    "jameslyons@gmail.com":    "JAMES",
+}
+
+_STRATEGY_ENV_KEY = {
+    "stat_arb":    "STAT_ARB",
+    "momentum":    "MOMENTUM",
+    "vol_premium": "VOL_PREMIUM",
 }
 
 
-def _env_creds_for(bot_key: str) -> dict | None:
-    """Return credentials from environment variables for a given strategy, or None."""
-    id_key, tok_key, type_key = _STRATEGY_ENV[bot_key]
-    account_id   = os.environ.get(id_key)
-    access_token = os.environ.get(tok_key)
-    account_type = os.environ.get(type_key, "practice")
-    if account_id and access_token:
-        return {"account_id": account_id, "access_token": access_token, "account_type": account_type}
-    # Fall back to shared OANDA_* env vars
-    account_id   = os.environ.get("OANDA_ACCOUNT_ID")
-    access_token = os.environ.get("OANDA_ACCESS_TOKEN")
-    account_type = os.environ.get("OANDA_ACCOUNT_TYPE", "practice")
-    if account_id and access_token:
-        return {"account_id": account_id, "access_token": access_token, "account_type": account_type}
-    return None
+def seed_tokens_from_env() -> None:
+    """Populate per-user OANDA tokens from env vars at every startup.
+
+    Env var pattern:  {USER_PREFIX}_{STRATEGY_KEY}_ACCOUNT_ID
+                      {USER_PREFIX}_{STRATEGY_KEY}_ACCESS_TOKEN
+                      {USER_PREFIX}_{STRATEGY_KEY}_ACCOUNT_TYPE  (defaults to 'practice')
+
+    Example:  JAMIE_STAT_ARB_ACCOUNT_ID, JAMIE_STAT_ARB_ACCESS_TOKEN
+              JAMES_MOMENTUM_ACCOUNT_ID,  JAMES_MOMENTUM_ACCESS_TOKEN
+    """
+    for email, prefix in _USER_ENV_PREFIX.items():
+        user = get_user_by_email(email)
+        if not user:
+            continue
+        user_id = user["id"]
+        for bot_key, strat_key in _STRATEGY_ENV_KEY.items():
+            account_id   = os.environ.get(f"{prefix}_{strat_key}_ACCOUNT_ID")
+            access_token = os.environ.get(f"{prefix}_{strat_key}_ACCESS_TOKEN")
+            account_type = os.environ.get(f"{prefix}_{strat_key}_ACCOUNT_TYPE", "practice")
+            if account_id and access_token:
+                upsert_user_token(user_id, bot_key, account_id, access_token, account_type)
 
 
 def _build_creds_map(user_id: int) -> dict:
-    """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots.
-
-    Priority: DB row (saved via UI) → per-strategy env var → shared OANDA_* env var.
-    """
+    """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots."""
     creds_map = {}
     for bot_key in ["stat_arb", "momentum", "vol_premium"]:
         row = get_user_token(user_id, bot_key)
@@ -238,11 +248,6 @@ def _build_creds_map(user_id: int) -> dict:
                 "access_token": row["oanda_access_token"],
                 "account_type": row["oanda_account_type"],
             }
-        else:
-            env = _env_creds_for(bot_key)
-            if env:
-                creds_map[bot_key] = env
-
     return creds_map
 
 
@@ -577,6 +582,7 @@ def serve_frontend(path):
 # Run DB init + seed whether started via gunicorn or directly
 init_db()
 seed_users(SEED_USERS)
+seed_tokens_from_env()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
