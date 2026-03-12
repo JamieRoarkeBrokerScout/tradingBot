@@ -100,8 +100,9 @@ class VolPremiumStrategy(SafeguardsBase):
         price         = current_price if current_price is not None else last_close
         estimated_vix = iv_proxy * 100 * (252 ** 0.5)
 
-        log.debug("[%s] iv=%.5f rv=%.5f ratio=%.3f vix_est=%.1f",
-                  self.strategy_name, iv_proxy, rv_proxy, iv_rv_ratio, estimated_vix)
+        log.info("[%s] iv=%.5f rv=%.5f ratio=%.3f vix_est=%.1f (entry needs %.2f–%.2f)",
+                 self.strategy_name, iv_proxy, rv_proxy, iv_rv_ratio, estimated_vix,
+                 config.VOL_ENTRY_RATIO_MIN, config.VOL_ENTRY_RATIO_MAX)
 
         # ── KILL SWITCHES (fire before any entry check) ────────────────────
         if iv_rv_ratio >= config.VOL_KILL_RATIO:

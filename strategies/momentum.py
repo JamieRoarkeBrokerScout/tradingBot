@@ -217,10 +217,16 @@ class MomentumStrategy(SafeguardsBase):
             last_avgv  = float(avg_vol.iloc[-1]) if not avg_vol.isna().iloc[-1] else 0.0
 
             if last_close > 0 and (last_atr / last_close) < config.MOMENTUM_MIN_ATR_PCT:
+                log.info("[%s] %s skip: ATR/price=%.4f below min %.4f",
+                         self.strategy_name, inst, last_atr / last_close, config.MOMENTUM_MIN_ATR_PCT)
                 continue
 
             vol_ok    = last_avgv > 0 and last_vol >= config.MOMENTUM_VOLUME_MULT * last_avgv
             direction: Optional[int] = None
+
+            log.info("[%s] %s bars=%d rsi=%.1f ma200=%.2f close=%.2f vol_ok=%s vol=%.0f avgvol=%.0f",
+                     self.strategy_name, inst, len(df), last_rsi, last_ma, last_close,
+                     vol_ok, last_vol, last_avgv)
 
             if last_rsi > config.MOMENTUM_RSI_LONG and vol_ok and last_close > last_ma:
                 direction = +1
@@ -266,10 +272,12 @@ class MomentumStrategy(SafeguardsBase):
     # ── Data helpers ──────────────────────────────────────────────────────────
 
     def _fetch_candles(self, instrument: str):
-        end   = _utcnow()
-        # Need enough bars for the 200-period MA
-        hours = max(config.MOMENTUM_CANDLES, config.MOMENTUM_MA_PERIOD) + 30
-        start = end - timedelta(hours=hours)
+        end  = _utcnow()
+        # Need enough H1 bars for the 200-period MA.
+        # Markets are ~70% open (closed weekends + nightly break), so use calendar
+        # days: 200 bars / 20 trading-hrs/day = 10 trading days → +14 day buffer.
+        days  = (max(config.MOMENTUM_CANDLES, config.MOMENTUM_MA_PERIOD) // 20) + 14
+        start = end - timedelta(days=days)
         return oanda_history(self._api, instrument, start, end, config.MOMENTUM_GRANULARITY)
 
     def _latest_rsi(self, instrument: str) -> float:

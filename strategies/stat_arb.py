@@ -148,12 +148,17 @@ class StatArbStrategy(SafeguardsBase):
                 log.warning("[%s] fetch failed for %s: %s", self.strategy_name, pair_key, exc)
                 continue
 
+            log.info("[%s] %s z=%.3f corr=%.3f spread_std=%.5f",
+                     self.strategy_name, pair_key, z, corr, spread_std)
+
             # Filters
             if corr < config.STAT_ARB_MIN_CORRELATION:
-                log.debug("[%s] %s corr=%.3f below min", self.strategy_name, pair_key, corr)
+                log.info("[%s] %s skip: corr=%.3f below min %.2f",
+                         self.strategy_name, pair_key, corr, config.STAT_ARB_MIN_CORRELATION)
                 continue
             if spread_std < config.STAT_ARB_MIN_SPREAD_STD:
-                log.debug("[%s] %s spread_std=%.5f below min", self.strategy_name, pair_key, spread_std)
+                log.info("[%s] %s skip: spread_std=%.5f below min %.5f",
+                         self.strategy_name, pair_key, spread_std, config.STAT_ARB_MIN_SPREAD_STD)
                 continue
 
             if z >= config.STAT_ARB_ENTRY_Z:
