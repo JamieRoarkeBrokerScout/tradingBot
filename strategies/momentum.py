@@ -224,13 +224,13 @@ class MomentumStrategy(SafeguardsBase):
             vol_ok    = last_avgv > 0 and last_vol >= config.MOMENTUM_VOLUME_MULT * last_avgv
             direction: Optional[int] = None
 
-            log.info("[%s] %s bars=%d rsi=%.1f ma200=%.2f close=%.2f vol_ok=%s vol=%.0f avgvol=%.0f",
+            log.info("[%s] %s bars=%d rsi=%.1f ma200=%.2f close=%.2f vol=%.0f avgvol=%.0f",
                      self.strategy_name, inst, len(df), last_rsi, last_ma, last_close,
-                     vol_ok, last_vol, last_avgv)
+                     last_vol, last_avgv)
 
-            if last_rsi > config.MOMENTUM_RSI_LONG and vol_ok and last_close > last_ma:
+            if last_rsi > config.MOMENTUM_RSI_LONG and last_close > last_ma:
                 direction = +1
-            elif last_rsi < config.MOMENTUM_RSI_SHORT and vol_ok and last_close < last_ma:
+            elif last_rsi < config.MOMENTUM_RSI_SHORT and last_close < last_ma:
                 direction = -1
 
             if direction is None:

@@ -207,7 +207,10 @@ class VolPremiumStrategy(SafeguardsBase):
     def _vol_metrics(self):
         """Returns (iv_proxy, rv_proxy, atr, last_close)."""
         end      = _utcnow()
-        lookback = config.VOL_RV_PERIOD + config.VOL_IV_ATR_PERIOD + 15
+        # Need VOL_IV_ATR_PERIOD + VOL_RV_PERIOD trading days of daily bars.
+        # Calendar days ≈ trading days × 7/5, plus a buffer.
+        trading_days_needed = config.VOL_IV_ATR_PERIOD + config.VOL_RV_PERIOD
+        lookback = int(trading_days_needed * 1.6) + 20
         start    = end - timedelta(days=lookback)
 
         hist  = oanda_history(self._api, config.VOL_INSTRUMENT, start, end, "D")
