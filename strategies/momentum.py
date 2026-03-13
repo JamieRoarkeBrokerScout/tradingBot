@@ -192,8 +192,8 @@ class MomentumStrategy(SafeguardsBase):
 
             try:
                 df = self._fetch_candles(inst)
-            except Exception:
-                log.warning("[%s] failed to fetch %s", self.strategy_name, inst)
+            except Exception as exc:
+                log.warning("[%s] failed to fetch %s: %s", self.strategy_name, inst, exc)
                 continue
 
             if len(df) < config.MOMENTUM_MA_PERIOD:
