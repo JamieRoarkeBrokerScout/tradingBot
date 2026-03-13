@@ -38,6 +38,7 @@ _DEFAULT_STRATEGY_STATE = {
     "stat_arb":    {"enabled": False},
     "momentum":    {"enabled": False},
     "vol_premium": {"enabled": False},
+    "crypto":      {"enabled": False},
 }
 
 # Global strategy runner process
@@ -214,6 +215,7 @@ _STRATEGY_ENV_KEY = {
     "stat_arb":    "STAT_ARB",
     "momentum":    "MOMENTUM",
     "vol_premium": "VOL_PREMIUM",
+    "crypto":      "CRYPTO",
 }
 
 
@@ -700,10 +702,11 @@ def get_config():
 def health():
     running = is_bot_running()
     return jsonify({
-        "status": "ok",
+        "status":      "ok",
         "bot_running": running,
-        "pid": bot_process.pid if running else None,
-        "config": current_config,
+        "pid":         bot_process.pid if running else None,
+        "config":      current_config,
+        "environment": os.environ.get("ENVIRONMENT", "staging"),
     })
 
 
@@ -711,7 +714,7 @@ def health():
 # Strategy routes
 # ---------------------------------------------------------------------------
 
-VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium"}
+VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto"}
 
 
 @app.route("/api/strategies", methods=["GET"])

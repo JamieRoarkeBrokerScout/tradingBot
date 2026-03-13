@@ -64,7 +64,8 @@ class SafeguardsBase:
     Required in subclass:
         strategy_name: str  (class attribute)
     """
-    strategy_name: str = "base"
+    strategy_name:   str  = "base"
+    trades_weekends: bool = False   # override to True for 24/7 instruments (crypto)
 
     # ── Approval gate ─────────────────────────────────────────────────────────
 
@@ -109,6 +110,9 @@ class SafeguardsBase:
 
             if _near_session_boundary():
                 blocks.append("session_boundary")
+
+            if not self.trades_weekends and _weekend_blackout():
+                blocks.append("weekend_blackout")
 
             if blocks:
                 log.info("[%s] BLOCKED: %s", self.strategy_name, " | ".join(blocks))
@@ -198,3 +202,24 @@ def _near_session_boundary() -> bool:
     now = _utcnow().time()
     buf = config.HALT_MARKET_BUFFER_MIN
     return now < dtime(0, buf) or now >= dtime(23, 60 - buf)
+
+
+def _weekend_blackout() -> bool:
+    """
+    Block new opens during weekend / pre-weekend window:
+      - Friday at/after HALT_FRIDAY_CUTOFF_UTC (e.g. 20:00 UTC = 3 PM ET)
+      - All day Saturday
+      - Sunday before forex open (before 21:00 UTC)
+    Closes are always allowed — the runner bypasses this gate for close signals.
+    """
+    now = _utcnow()
+    weekday = now.weekday()   # 0=Mon … 4=Fri, 5=Sat, 6=Sun
+    hour    = now.hour
+
+    if weekday == 4 and hour >= config.HALT_FRIDAY_CUTOFF_UTC:
+        return True   # Friday afternoon/evening
+    if weekday == 5:
+        return True   # All day Saturday
+    if weekday == 6 and hour < 21:
+        return True   # Sunday before forex open (21:00 UTC)
+    return False

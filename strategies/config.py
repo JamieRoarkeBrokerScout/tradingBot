@@ -9,6 +9,8 @@ HALT_MAX_OPEN_POSITIONS  = 12
 HALT_MAX_LEVERAGE        = 10.0       # total portfolio leverage (higher for small accounts)
 HALT_MARKET_BUFFER_MIN   = 15         # minutes before/after session boundary
 HALT_CONSECUTIVE_LOSSES  = 5
+HALT_FRIDAY_CUTOFF_UTC   = 20         # no new opens on Friday at/after this hour (UTC)
+                                      # 20:00 UTC = 3 PM ET = 12 PM PT
 
 # ─── Stat-Arb ─────────────────────────────────────────────────────────────────
 STAT_ARB_PAIRS = [
@@ -64,6 +66,27 @@ VOL_TP_ATR_MULT          = 0.8
 VOL_MAX_EXPOSURE_PCT     = 0.20       # 20% NAV hard cap
 VOL_MAX_AGE_DAYS         = 5
 VOL_CLOSE_RATIO          = 1.0        # exit when iv_rv drops below this
+
+# ─── Crypto Momentum ──────────────────────────────────────────────────────────
+CRYPTO_INSTRUMENTS     = ["BTC_USD", "ETH_USD"]
+CRYPTO_POLL_SECONDS    = 300         # 5 minutes
+CRYPTO_CANDLES         = 100         # bars to fetch
+CRYPTO_GRANULARITY     = "H1"
+CRYPTO_RSI_PERIOD      = 14
+CRYPTO_ATR_PERIOD      = 14
+CRYPTO_MA_PERIOD       = 50          # shorter MA — crypto trends faster
+CRYPTO_RSI_LONG        = 60          # RSI above this → bullish
+CRYPTO_RSI_SHORT       = 40          # RSI below this → bearish
+CRYPTO_RSI_EXIT        = 50          # exit when RSI crosses back through midline
+CRYPTO_NAV_PCT         = 0.02        # 2% NAV per trade — smaller due to high volatility
+CRYPTO_STOP_ATR_MULT   = 2.5
+CRYPTO_TP_ATR_MULT     = 4.0
+CRYPTO_TRAIL_TRIGGER   = 1.0         # ATR profit before trailing activates
+CRYPTO_TRAIL_STOP      = 2.0         # trailing stop distance in ATR
+CRYPTO_MIN_ATR_PCT     = 0.005       # 0.5% minimum ATR (crypto is always volatile)
+CRYPTO_MAX_OPEN        = 2           # max 1 per instrument, 2 total
+CRYPTO_MIN_GAP_HOURS   = 2
+CRYPTO_MAX_AGE_DAYS    = 7
 
 # ─── OANDA / network ──────────────────────────────────────────────────────────
 OANDA_BACKOFF_BASE       = 1.0

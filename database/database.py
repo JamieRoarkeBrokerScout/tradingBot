@@ -221,7 +221,7 @@ def delete_session(token: str):
 # bot_key values: 'legacy_bot' | 'stat_arb' | 'momentum' | 'vol_premium'
 # ---------------------------------------------------------------------------
 
-ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium"]
+ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium", "crypto"]
 
 
 def get_user_token(user_id: int, bot_key: str = "legacy_bot") -> dict | None:

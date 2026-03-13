@@ -67,5 +67,6 @@ export interface StrategiesResponse {
         stat_arb:    StrategyState;
         momentum:    StrategyState;
         vol_premium: StrategyState;
+        crypto:      StrategyState;
     };
 }
