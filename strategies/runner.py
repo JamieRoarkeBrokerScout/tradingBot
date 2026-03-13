@@ -49,6 +49,7 @@ log = logging.getLogger("runner")
 
 _PRICE_INSTRUMENTS = [
     "SPX500_USD", "XAU_USD", "XAG_USD", "BCO_USD", "NAS100_USD",
+    "EUR_USD", "GBP_USD",
 ]
 
 
@@ -101,10 +102,13 @@ def _submit(api, sig) -> bool:
             else:
                 # Bypass tpqoa's create_order (silently returns None on error).
                 # Call the underlying v20 context directly to get the full response.
+                # positionFill=OPEN_ONLY prevents OANDA cancelling orders for FX/CFD
+                # pairs where DEFAULT fill would attempt to close an opposing position.
                 request = api.ctx.order.market(
                     api.account_id,
                     instrument=sig.instrument,
                     units=signed_units,
+                    positionFill="OPEN_ONLY",
                 )
                 body = request.body
                 status = request.status
@@ -119,11 +123,21 @@ def _submit(api, sig) -> bool:
 
                 if isinstance(body, dict):
                     if "orderRejectTransaction" in body:
-                        reason = body["orderRejectTransaction"]
+                        txn = body["orderRejectTransaction"]
+                        reason = getattr(txn, "rejectReason", txn)
                         log.error("[runner] order REJECTED for %s: %s", sig.instrument, reason)
                         return False
-                    if "orderFillTransaction" in body or "orderCreateTransaction" in body:
-                        log.info("[runner] order placed successfully for %s", sig.instrument)
+                    if "orderCancelTransaction" in body:
+                        txn = body["orderCancelTransaction"]
+                        reason = getattr(txn, "reason", txn)
+                        log.error("[runner] order CANCELLED for %s: reason=%s", sig.instrument, reason)
+                        return False
+                    if "orderFillTransaction" in body:
+                        log.info("[runner] order filled successfully for %s", sig.instrument)
+                        return True
+                    if "orderCreateTransaction" in body:
+                        # GTC/GTD order accepted but not yet filled — treat as success
+                        log.info("[runner] order created (pending fill) for %s", sig.instrument)
                         return True
                     # Unexpected body — log everything for diagnosis
                     log.error("[runner] unexpected OANDA response for %s (status=%s): %s",
@@ -375,11 +389,11 @@ def main() -> None:
             try:
                 resp = apis[bot_key].ctx.account.summary(creds["account_id"])
                 if resp.status == 200:
-                    body = resp.body
-                    acct = body.get("account", {})
-                    bal = acct.get("balance", "?")
+                    acct = resp.body["account"]
+                    bal = getattr(acct, "balance", "?")
+                    cur = getattr(acct, "currency", "?")
                     log.info("Account verified for %s: balance=%s currency=%s",
-                             bot_key, bal, acct.get("currency", "?"))
+                             bot_key, bal, cur)
                 else:
                     log.error("Account check FAILED for %s: status=%s body=%s",
                               bot_key, resp.status, resp.body)
