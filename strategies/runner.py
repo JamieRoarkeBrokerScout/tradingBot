@@ -360,7 +360,23 @@ def main() -> None:
         try:
             cfg = _make_cfg_file(creds["account_id"], creds["access_token"], creds["account_type"])
             apis[bot_key] = tpqoa.tpqoa(cfg)
-            log.info("API initialised for %s (account: %s)", bot_key, creds["account_id"])
+            log.info("API initialised for %s (account: %s type=%s hostname=%s)",
+                     bot_key, creds["account_id"], creds["account_type"],
+                     apis[bot_key].hostname)
+            # Verify the token can actually access this account
+            try:
+                resp = apis[bot_key].ctx.account.summary(creds["account_id"])
+                if resp.status == 200:
+                    body = resp.body
+                    acct = body.get("account", {})
+                    bal = acct.get("balance", "?")
+                    log.info("Account verified for %s: balance=%s currency=%s",
+                             bot_key, bal, acct.get("currency", "?"))
+                else:
+                    log.error("Account check FAILED for %s: status=%s body=%s",
+                              bot_key, resp.status, resp.body)
+            except Exception as exc:
+                log.error("Account check error for %s: %s", bot_key, exc)
         except Exception:
             log.exception("Failed to initialise API for %s — strategy will be skipped", bot_key)
 
