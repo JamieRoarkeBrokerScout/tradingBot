@@ -25,6 +25,7 @@ from typing import Optional
 from . import config
 from .base import SafeguardsBase, Signal
 from ._utils import oanda_history, atr_series
+from .learner import get_learner
 
 log = logging.getLogger("vol_premium")
 
@@ -151,6 +152,13 @@ class VolPremiumStrategy(SafeguardsBase):
                     log.info("[%s] exposure cap reached (%.1f%% NAV)",
                              self.strategy_name, config.VOL_MAX_EXPOSURE_PCT * 100)
                     return signals
+
+            # Learner gate
+            learner_features = {"iv_rv_ratio": iv_rv_ratio, "vix_est": estimated_vix}
+            allow, reason = get_learner().evaluate_entry(self.strategy_name, learner_features)
+            if not allow:
+                log.info("[%s] learner blocked entry: %s", self.strategy_name, reason)
+                return signals
 
             stop_dist = config.VOL_STOP_ATR_MULT * atr
             units = (nav * config.VOL_NAV_PCT) / stop_dist if stop_dist > 0 else 0

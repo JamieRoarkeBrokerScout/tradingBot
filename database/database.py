@@ -130,6 +130,17 @@ def init_db():
         )
     """)
 
+    # ── Migration: add learner columns to trades ─────────────────────────────
+    cursor.execute("PRAGMA table_info(trades)")
+    trade_cols = [row[1] for row in cursor.fetchall()]
+    if "strategy_name" not in trade_cols:
+        cursor.execute("ALTER TABLE trades ADD COLUMN strategy_name TEXT")
+    if "entry_metadata" not in trade_cols:
+        cursor.execute("ALTER TABLE trades ADD COLUMN entry_metadata TEXT")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy_name)"
+    )
+
     conn.commit()
     conn.close()
 
@@ -330,6 +341,25 @@ def upsert_strategy_state(name: str, enabled: bool) -> None:
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Learner helpers
+# ---------------------------------------------------------------------------
+
+def get_trades_for_learner(strategy_name: str, limit: int = 200) -> list[dict]:
+    """Return closed trades for a strategy that have entry_metadata stored."""
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT raw_pl, entry_metadata FROM trades
+           WHERE strategy_name = ? AND entry_metadata IS NOT NULL
+           ORDER BY id DESC LIMIT ?""",
+        (strategy_name, limit),
+    )
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 if __name__ == "__main__":

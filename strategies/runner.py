@@ -166,6 +166,8 @@ def _record_trade(
     entry_time: str,
     exit_time: str,
     exit_reason: str,
+    strategy_name: str = "",
+    entry_metadata: str | None = None,
 ) -> None:
     """Write a completed trade to the dashboard's SQLite database."""
     if entry_price <= 0 or exit_price <= 0:
@@ -179,12 +181,14 @@ def _record_trade(
                    (entry_time, exit_time, instrument, direction, entry_units,
                     entry_price, exit_price, exit_reason,
                     pl_points, pl_R, raw_pl,
-                    bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode,
+                    strategy_name, entry_metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (entry_time, exit_time, instrument, direction, int(units),
              entry_price, exit_price, exit_reason,
              pl_points, 0.0, raw_pl,
-             None, None, None, None, None, None),
+             None, None, None, None, None, None,
+             strategy_name or None, entry_metadata),
         )
         conn.commit()
         conn.close()
@@ -274,11 +278,13 @@ class Runner:
                             if action == "open":
                                 entry_price = prices.get(sig.instrument, 0.0)
                                 self._open_trades[trade_key] = {
-                                    "instrument":  sig.instrument,
-                                    "direction":   sig.direction,
-                                    "units":       sig.units,
-                                    "entry_price": entry_price,
-                                    "entry_time":  now_str,
+                                    "instrument":     sig.instrument,
+                                    "direction":      sig.direction,
+                                    "units":          sig.units,
+                                    "entry_price":    entry_price,
+                                    "entry_time":     now_str,
+                                    "strategy_name":  name,
+                                    "entry_metadata": json.dumps(sig.meta),
                                 }
                                 try:
                                     upsert_open_trade(
@@ -309,6 +315,8 @@ class Runner:
                                         entry_time=entry["entry_time"],
                                         exit_time=now_str,
                                         exit_reason=sig.meta.get("reason", "close"),
+                                        strategy_name=entry.get("strategy_name", ""),
+                                        entry_metadata=entry.get("entry_metadata"),
                                     )
 
                 except Exception:

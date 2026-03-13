@@ -19,6 +19,7 @@ import numpy as np
 from . import config
 from .base import SafeguardsBase, Signal
 from ._utils import oanda_history, atr_scalar
+from .learner import get_learner
 
 log = logging.getLogger("stat_arb")
 
@@ -188,17 +189,27 @@ class StatArbStrategy(SafeguardsBase):
             stop_a = price_a - dir_a * config.STAT_ARB_STOP_ATR_MULT * atr_a
             stop_b = price_b - dir_b * config.STAT_ARB_STOP_ATR_MULT * atr_b
 
+            # Learner gate — check both legs atomically; skip the pair if either blocked
+            learner_features_a = {"z": z, "corr": corr, "pair": pair_key, "leg": "A"}
+            learner_features_b = {"z": z, "corr": corr, "pair": pair_key, "leg": "B"}
+            allow_a, reason_a = get_learner().evaluate_entry(self.strategy_name, learner_features_a)
+            allow_b, reason_b = get_learner().evaluate_entry(self.strategy_name, learner_features_b)
+            if not allow_a or not allow_b:
+                log.info("[%s] learner blocked %s: A=%s B=%s",
+                         self.strategy_name, pair_key, reason_a, reason_b)
+                continue
+
             sig_a = Signal(
                 instrument=inst_a, direction=dir_a, units=size_a,
                 stop_price=stop_a, strategy=self.strategy_name,
                 meta={"action": "open", "leg": "A", "pair": pair_key, "z": z,
-                      "stop_dist": stop_dist_a},
+                      "corr": corr, "stop_dist": stop_dist_a},
             )
             sig_b = Signal(
                 instrument=inst_b, direction=dir_b, units=size_b,
                 stop_price=stop_b, strategy=self.strategy_name,
                 meta={"action": "open", "leg": "B", "pair": pair_key, "z": z,
-                      "stop_dist": stop_dist_b},
+                      "corr": corr, "stop_dist": stop_dist_b},
             )
 
             if not (self.approve_trade(sig_a) and self.approve_trade(sig_b)):

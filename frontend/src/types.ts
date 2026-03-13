@@ -38,7 +38,24 @@ export interface OpenTrade {
     units: number;
     entry_price: number;
     entry_time: string;
+    current_price?: number | null;
+    unrealized_pl?: number | null;
 }
+
+export interface AccountInfo {
+    account_id: string;
+    balance: number;
+    nav: number;
+    unrealized_pl: number;
+    margin_used: number;
+    margin_available: number;
+    margin_pct: number;
+    open_trade_count: number;
+    currency: string;
+    error?: string;
+}
+
+export type AccountData = Record<string, AccountInfo>;
 
 export interface StrategyState {
     enabled: boolean;

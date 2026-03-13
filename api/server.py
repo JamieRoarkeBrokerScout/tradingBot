@@ -6,6 +6,8 @@ import sqlite3
 import subprocess
 import tempfile
 from functools import wraps
+
+import requests as _requests
 from pathlib import Path
 
 # Ensure project root is on sys.path however the server is invoked
@@ -357,10 +359,153 @@ def _get_db():
     return conn
 
 
+# ---------------------------------------------------------------------------
+# OANDA REST helpers (used by account + trade-close endpoints)
+# ---------------------------------------------------------------------------
+
+def _oanda_base_url(account_type: str) -> str:
+    if account_type == "live":
+        return "https://api-fxtrade.oanda.com/v3"
+    return "https://api-fxpractice.oanda.com/v3"
+
+
+def _oanda_headers(access_token: str) -> dict:
+    return {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+
+def _fetch_oanda_prices(row: dict, instruments: list[str]) -> dict[str, float]:
+    """Return {instrument: mid_price} for a list of instruments using one account's token."""
+    base = _oanda_base_url(row["oanda_account_type"])
+    resp = _requests.get(
+        f"{base}/accounts/{row['oanda_account_id']}/pricing",
+        headers=_oanda_headers(row["oanda_access_token"]),
+        params={"instruments": ",".join(instruments)},
+        timeout=5,
+    )
+    prices: dict[str, float] = {}
+    if resp.status_code == 200:
+        for p in resp.json().get("prices", []):
+            bid = float((p.get("bids") or [{}])[0].get("price", 0))
+            ask = float((p.get("asks") or [{}])[0].get("price", 0))
+            if bid > 0 and ask > 0:
+                prices[p["instrument"]] = (bid + ask) / 2
+    return prices
+
+
+# ---------------------------------------------------------------------------
+# Open-trades endpoint (enhanced with live P&L)
+# ---------------------------------------------------------------------------
+
 @app.route("/api/open_trades", methods=["GET"])
 @require_auth
 def open_trades_route():
-    return jsonify(get_open_trades())
+    trades = get_open_trades()
+    if not trades:
+        return jsonify([])
+
+    # Fetch live prices for all open instruments
+    all_tokens = get_all_user_tokens(g.user_id)
+    prices: dict[str, float] = {}
+    token_row = next((r for r in all_tokens.values() if r.get("oanda_access_token")), None)
+    if token_row:
+        try:
+            instruments = list({t["instrument"] for t in trades})
+            prices = _fetch_oanda_prices(token_row, instruments)
+        except Exception:
+            pass
+
+    for t in trades:
+        current = prices.get(t["instrument"], 0.0)
+        t["current_price"] = current if current > 0 else None
+        if current > 0 and t.get("entry_price", 0) > 0:
+            t["unrealized_pl"] = (current - t["entry_price"]) * t["direction"] * t["units"]
+        else:
+            t["unrealized_pl"] = None
+
+    return jsonify(trades)
+
+
+@app.route("/api/open_trades/<string:trade_key>/close", methods=["POST"])
+@require_auth
+def close_open_trade(trade_key):
+    """Close a live position on OANDA and remove it from the open_trades table."""
+    from database.database import delete_open_trade
+
+    trades = get_open_trades()
+    trade = next((t for t in trades if t["trade_key"] == trade_key), None)
+    if not trade:
+        return jsonify({"error": "Trade not found"}), 404
+
+    strategy   = trade["strategy"]
+    instrument = trade["instrument"]
+    direction  = trade["direction"]
+
+    # Get credentials — prefer the strategy's own account, fall back to any
+    row = get_user_token(g.user_id, strategy)
+    if not row:
+        all_tokens = get_all_user_tokens(g.user_id)
+        row = next(iter(all_tokens.values()), None)
+    if not row:
+        return jsonify({"error": "No OANDA credentials configured"}), 400
+
+    try:
+        base = _oanda_base_url(row["oanda_account_type"])
+        body = {"longUnits": "ALL"} if direction > 0 else {"shortUnits": "ALL"}
+        resp = _requests.put(
+            f"{base}/accounts/{row['oanda_account_id']}/positions/{instrument}/close",
+            headers=_oanda_headers(row["oanda_access_token"]),
+            json=body,
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            delete_open_trade(trade_key)
+            return jsonify({"status": "closed", "trade_key": trade_key})
+        return jsonify({"error": f"OANDA {resp.status_code}: {resp.text[:300]}"}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Account summary endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/api/account", methods=["GET"])
+@require_auth
+def get_account():
+    """Fetch live balance, equity, margin and leverage from OANDA for each strategy account."""
+    all_tokens = get_all_user_tokens(g.user_id)
+    result: dict = {}
+    for bot_key in ["stat_arb", "momentum", "vol_premium"]:
+        row = all_tokens.get(bot_key)
+        if not row or not row.get("oanda_access_token"):
+            continue
+        try:
+            base = _oanda_base_url(row["oanda_account_type"])
+            resp = _requests.get(
+                f"{base}/accounts/{row['oanda_account_id']}/summary",
+                headers=_oanda_headers(row["oanda_access_token"]),
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                acct = resp.json().get("account", {})
+                nav          = float(acct.get("NAV", 0) or 0)
+                margin_used  = float(acct.get("marginUsed", 0) or 0)
+                result[bot_key] = {
+                    "account_id":       row["oanda_account_id"],
+                    "balance":          float(acct.get("balance", 0) or 0),
+                    "nav":              nav,
+                    "unrealized_pl":    float(acct.get("unrealizedPL", 0) or 0),
+                    "margin_used":      margin_used,
+                    "margin_available": float(acct.get("marginAvailable", 0) or 0),
+                    "open_trade_count": int(acct.get("openTradeCount", 0) or 0),
+                    "margin_pct":       round(margin_used / nav * 100, 1) if nav > 0 else 0,
+                    "currency":         acct.get("currency", "USD"),
+                }
+            else:
+                result[bot_key] = {"error": f"HTTP {resp.status_code}"}
+        except Exception as exc:
+            result[bot_key] = {"error": str(exc)}
+    return jsonify(result)
 
 
 @app.route("/api/trades", methods=["GET"])

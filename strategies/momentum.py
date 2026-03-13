@@ -16,6 +16,7 @@ from typing import Optional
 from . import config
 from .base import SafeguardsBase, Signal
 from ._utils import oanda_history, atr_series, rsi as compute_rsi
+from .learner import get_learner
 
 log = logging.getLogger("momentum")
 
@@ -236,6 +237,17 @@ class MomentumStrategy(SafeguardsBase):
             if direction is None:
                 continue
 
+            # Learner gate — skip buckets with historically poor win rates
+            learner_features = {
+                "rsi":       last_rsi,
+                "atr_pct":   last_atr / last_close if last_close > 0 else 0.0,
+                "direction": direction,
+            }
+            allow, reason = get_learner().evaluate_entry(self.strategy_name, learner_features)
+            if not allow:
+                log.info("[%s] learner blocked %s: %s", self.strategy_name, inst, reason)
+                continue
+
             stop = last_close - direction * config.MOMENTUM_STOP_ATR_MULT * last_atr
             tp   = last_close + direction * config.MOMENTUM_TP_ATR_MULT   * last_atr
 
@@ -246,10 +258,12 @@ class MomentumStrategy(SafeguardsBase):
                           self.strategy_name, inst, units, nav, stop_dist)
                 continue
 
+            atr_pct = last_atr / last_close if last_close > 0 else 0.0
             sig = Signal(
                 instrument=inst, direction=direction, units=units,
                 stop_price=stop, tp_price=tp, strategy=self.strategy_name,
                 meta={"action": "open", "rsi": last_rsi, "atr": last_atr,
+                      "atr_pct": atr_pct, "direction": direction,
                       "stop_dist": stop_dist},
             )
 

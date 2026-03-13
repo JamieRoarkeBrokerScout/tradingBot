@@ -7,7 +7,7 @@ import { logout, type AuthSession } from '../auth';
 import { apiFetch } from '../api';
 import TokenSettings from '../components/TokenSettings';
 import TradeModal from '../components/TradeModal';
-import type { Trade, Stats, DisplayTrade, StrategiesResponse, OpenTrade } from '../types';
+import type { Trade, Stats, DisplayTrade, StrategiesResponse, OpenTrade, AccountData } from '../types';
 
 const STRATEGY_META = [
     {
@@ -103,6 +103,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);
     const [strategyError, setStrategyError] = useState<string | null>(null);
     const [openTrades, setOpenTrades] = useState<OpenTrade[]>([]);
+    const [accountData, setAccountData] = useState<AccountData>({});
+    const [closingTrade, setClosingTrade] = useState<string | null>(null);
 
     const fetchStats = async () => {
         try { const r = await apiFetch('/api/stats'); if (r.ok) setStats(await r.json()); } catch {}
@@ -122,6 +124,20 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     };
     const fetchOpenTrades = async () => {
         try { const r = await apiFetch('/api/open_trades'); if (r.ok) setOpenTrades(await r.json()); } catch {}
+    };
+    const fetchAccount = async () => {
+        try { const r = await apiFetch('/api/account'); if (r.ok) setAccountData(await r.json()); } catch {}
+    };
+    const closeTrade = async (tradeKey: string) => {
+        setClosingTrade(tradeKey);
+        try {
+            const r = await apiFetch(`/api/open_trades/${encodeURIComponent(tradeKey)}/close`, { method: 'POST' });
+            if (r.ok) {
+                await fetchOpenTrades();
+                await fetchAccount();
+            }
+        } catch {}
+        setClosingTrade(null);
     };
     const fetchStrategies = async () => {
         try {
@@ -172,8 +188,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     };
 
     useEffect(() => {
-        Promise.all([fetchStats(), fetchTrades(), checkHealth(), fetchStrategies(), fetchOpenTrades()]);
-        const id = setInterval(() => { fetchStats(); fetchTrades(); checkHealth(); fetchStrategies(); fetchOpenTrades(); }, 5000);
+        Promise.all([fetchStats(), fetchTrades(), checkHealth(), fetchStrategies(), fetchOpenTrades(), fetchAccount()]);
+        const id = setInterval(() => { fetchStats(); fetchTrades(); checkHealth(); fetchStrategies(); fetchOpenTrades(); fetchAccount(); }, 10000);
         return () => clearInterval(id);
     }, []);
 
@@ -395,6 +411,52 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         </div>
                     </section>
 
+                    {/* Account Summary */}
+                    {Object.keys(accountData).length > 0 && (
+                        <section>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                                <BarChart3 size={12} /> Account Summary
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {(['stat_arb', 'momentum', 'vol_premium'] as const).map(key => {
+                                    const acct = accountData[key];
+                                    if (!acct || acct.error) return null;
+                                    const label = key === 'stat_arb' ? 'Stat Arb' : key === 'momentum' ? 'Momentum' : 'Vol Premium';
+                                    const plColor = acct.unrealized_pl >= 0 ? 'text-emerald-600' : 'text-rose-500';
+                                    return (
+                                        <div key={key} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3">{label}</p>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-slate-500">Balance</span>
+                                                    <span className="font-mono font-bold text-slate-800 text-sm">${acct.balance.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-slate-500">Equity (NAV)</span>
+                                                    <span className="font-mono font-bold text-slate-800 text-sm">${acct.nav.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-slate-500">Unrealised P&L</span>
+                                                    <span className={`font-mono font-bold text-sm ${plColor}`}>
+                                                        {acct.unrealized_pl >= 0 ? '+' : ''}${acct.unrealized_pl.toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                                    <span className="text-[10px] text-slate-500">Margin Used</span>
+                                                    <span className="font-mono text-slate-600 text-xs">${acct.margin_used.toFixed(2)} ({acct.margin_pct}%)</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] text-slate-500">Positions</span>
+                                                    <span className="font-mono text-slate-600 text-xs">{acct.open_trade_count}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    )}
+
                     {/* Open Positions */}
                     <section>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -415,30 +477,58 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                             <th className="text-left px-4 py-2.5">Side</th>
                                             <th className="text-right px-4 py-2.5">Units</th>
                                             <th className="text-right px-4 py-2.5">Entry</th>
+                                            <th className="text-right px-4 py-2.5">Current</th>
+                                            <th className="text-right px-4 py-2.5">P&L</th>
                                             <th className="text-right px-4 py-2.5">Opened</th>
+                                            <th className="px-4 py-2.5"></th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {openTrades.map(t => (
-                                            <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
-                                                <td className="px-4 py-2.5 font-mono font-bold text-slate-800">{t.instrument}</td>
-                                                <td className="px-4 py-2.5 text-slate-500">{t.strategy}</td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-                                                        t.direction > 0
-                                                            ? 'bg-emerald-100 text-emerald-700'
-                                                            : 'bg-rose-100 text-rose-600'
+                                        {openTrades.map(t => {
+                                            const pl = t.unrealized_pl;
+                                            const isClosing = closingTrade === t.trade_key;
+                                            return (
+                                                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                                                    <td className="px-4 py-2.5 font-mono font-bold text-slate-800">{t.instrument}</td>
+                                                    <td className="px-4 py-2.5 text-slate-500">{t.strategy}</td>
+                                                    <td className="px-4 py-2.5">
+                                                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                                                            t.direction > 0
+                                                                ? 'bg-emerald-100 text-emerald-700'
+                                                                : 'bg-rose-100 text-rose-600'
+                                                        }`}>
+                                                            {t.direction > 0 ? 'LONG' : 'SHORT'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.units.toFixed(0)}</td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-500">{t.entry_price.toFixed(2)}</td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">
+                                                        {t.current_price != null ? t.current_price.toFixed(2) : '—'}
+                                                    </td>
+                                                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${
+                                                        pl == null ? 'text-slate-400' : pl >= 0 ? 'text-emerald-600' : 'text-rose-500'
                                                     }`}>
-                                                        {t.direction > 0 ? 'LONG' : 'SHORT'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.units.toFixed(0)}</td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.entry_price.toFixed(4)}</td>
-                                                <td className="px-4 py-2.5 text-right text-slate-400 font-mono">
-                                                    {new Date(t.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                        {pl == null ? '—' : `${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}`}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right text-slate-400 font-mono">
+                                                        {new Date(t.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right">
+                                                        <button
+                                                            onClick={() => closeTrade(t.trade_key)}
+                                                            disabled={isClosing}
+                                                            className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                                                isClosing
+                                                                    ? 'bg-slate-100 text-slate-400 cursor-wait'
+                                                                    : 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
+                                                            }`}
+                                                        >
+                                                            {isClosing ? '...' : 'Close'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
