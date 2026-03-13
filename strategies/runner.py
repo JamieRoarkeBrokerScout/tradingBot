@@ -97,8 +97,12 @@ def _submit(api, sig) -> bool:
             if action == "close":
                 resp = api.close_trade(sig.instrument, trade_units)
             else:
-                resp = api.create_order(sig.instrument, units=signed_units)
+                resp = api.create_order(sig.instrument, units=signed_units, ret=True)
             log.info("[runner] OANDA response: %s", resp)
+            if resp is None:
+                log.warning("[runner] create_order returned None for %s — order may have been rejected",
+                            sig.instrument)
+                return False
             return True
         except Exception as exc:
             exc_str = str(exc)
