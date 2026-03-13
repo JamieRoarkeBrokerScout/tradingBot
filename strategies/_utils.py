@@ -18,6 +18,20 @@ log = logging.getLogger("utils")
 
 def oanda_history(api, instrument: str, start: datetime, end: datetime,
                   granularity: str) -> pd.DataFrame:
+    """Fetch OHLCV history — dispatches to Kraken or OANDA based on broker type."""
+    # Kraken broker has its own get_history implementation
+    if hasattr(api, "_key"):
+        return api.get_history(
+            instrument=instrument,
+            start=start.strftime("%Y-%m-%dT%H:%M:%S"),
+            end=end.strftime("%Y-%m-%dT%H:%M:%S"),
+            granularity=granularity,
+        )
+    return _oanda_history(api, instrument, start, end, granularity)
+
+
+def _oanda_history(api, instrument: str, start: datetime, end: datetime,
+                   granularity: str) -> pd.DataFrame:
     """Fetch OANDA OHLCV history with exponential backoff on HTTP 429."""
     delay = config.OANDA_BACKOFF_BASE
     last_exc: Exception | None = None

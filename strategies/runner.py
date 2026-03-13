@@ -35,6 +35,7 @@ from strategies.stat_arb        import StatArbStrategy
 from strategies.momentum        import MomentumStrategy
 from strategies.vol_premium     import VolPremiumStrategy
 from strategies.crypto_momentum import CryptoMomentumStrategy
+from strategies.brokers.kraken  import KrakenBroker
 from database.database import (
     DB_PATH as _DB_PATH,
     upsert_open_trade, delete_open_trade, get_strategy_states,
@@ -85,19 +86,48 @@ def _submit(api, sig) -> bool:
     action = sig.meta.get("action", "open")
     delay  = config.OANDA_BACKOFF_BASE
 
-    if action == "close":
-        trade_units = max(1, int(sig.units))
+    # Use float units for fractional instruments (crypto); int for whole-unit instruments.
+    raw_units = sig.units * sig.direction
+    if abs(raw_units) >= 1:
+        signed_units: float = int(raw_units)
     else:
-        signed_units = int(sig.units * sig.direction)
+        signed_units = round(raw_units, 8)   # crypto — preserve fractional units
+
+    if action == "close":
+        close_units = abs(signed_units) if abs(signed_units) >= 1 else abs(raw_units)
+    else:
         if signed_units == 0:
-            log.warning("[runner] skipping %s order — computed 0 units (raw=%.4f); "
+            log.warning("[runner] skipping %s order — computed 0 units (raw=%.8f); "
                         "check position sizing", sig.instrument, sig.units)
             return False
+
+    # ── Kraken broker path ────────────────────────────────────────────────────
+    if isinstance(api, KrakenBroker):
+        try:
+            if action == "close":
+                ok = api.close_trade(sig.instrument, close_units)
+                return ok
+            else:
+                result = api.submit_market_order(sig.instrument, signed_units)
+                if result.get("filled"):
+                    log.info("[runner] Kraken order filled for %s", sig.instrument)
+                    return True
+                log.error("[runner] Kraken order failed for %s: %s",
+                          sig.instrument, result.get("error"))
+                return False
+        except Exception as exc:
+            log.error("[runner] Kraken order exception for %s: %s", sig.instrument, exc)
+            return False
+
+    # ── OANDA / tpqoa path ────────────────────────────────────────────────────
+    oanda_units = int(signed_units)   # OANDA requires integer units
+    if action == "close":
+        oanda_close = max(1, int(close_units))
 
     for attempt in range(config.OANDA_MAX_RETRIES):
         try:
             if action == "close":
-                resp = api.close_trade(sig.instrument, trade_units)
+                resp = api.close_trade(sig.instrument, oanda_close)
                 log.info("[runner] close_trade response: %s", resp)
                 return True
             else:
@@ -108,7 +138,7 @@ def _submit(api, sig) -> bool:
                 request = api.ctx.order.market(
                     api.account_id,
                     instrument=sig.instrument,
-                    units=signed_units,
+                    units=oanda_units,
                     positionFill="OPEN_ONLY",
                 )
                 body = request.body
@@ -383,25 +413,41 @@ def main() -> None:
     apis: dict = {}
     for bot_key, creds in creds_map.items():
         try:
-            cfg = _make_cfg_file(creds["account_id"], creds["access_token"], creds["account_type"])
-            apis[bot_key] = tpqoa.tpqoa(cfg)
-            log.info("API initialised for %s (account: %s type=%s hostname=%s)",
-                     bot_key, creds["account_id"], creds["account_type"],
-                     apis[bot_key].hostname)
-            # Verify the token can actually access this account
-            try:
-                resp = apis[bot_key].ctx.account.summary(creds["account_id"])
-                if resp.status == 200:
-                    acct = resp.body["account"]
-                    bal = getattr(acct, "balance", "?")
-                    cur = getattr(acct, "currency", "?")
-                    log.info("Account verified for %s: balance=%s currency=%s",
-                             bot_key, bal, cur)
-                else:
-                    log.error("Account check FAILED for %s: status=%s body=%s",
-                              bot_key, resp.status, resp.body)
-            except Exception as exc:
-                log.error("Account check error for %s: %s", bot_key, exc)
+            account_type = creds.get("account_type", "practice")
+
+            if account_type == "kraken":
+                # Kraken: account_id = API key, access_token = API secret
+                broker = KrakenBroker(
+                    api_key=creds["account_id"],
+                    api_secret=creds["access_token"],
+                )
+                apis[bot_key] = broker
+                log.info("API initialised for %s (broker=kraken)", bot_key)
+                try:
+                    summary = broker.get_account_summary()
+                    bal = summary.get("balance", "?")
+                    log.info("Kraken account verified for %s: balance=%s USD", bot_key, bal)
+                except Exception as exc:
+                    log.error("Kraken account check error for %s: %s", bot_key, exc)
+            else:
+                cfg = _make_cfg_file(creds["account_id"], creds["access_token"], account_type)
+                apis[bot_key] = tpqoa.tpqoa(cfg)
+                log.info("API initialised for %s (account: %s type=%s hostname=%s)",
+                         bot_key, creds["account_id"], account_type,
+                         apis[bot_key].hostname)
+                try:
+                    resp = apis[bot_key].ctx.account.summary(creds["account_id"])
+                    if resp.status == 200:
+                        acct = resp.body["account"]
+                        bal  = getattr(acct, "balance", "?")
+                        cur  = getattr(acct, "currency", "?")
+                        log.info("Account verified for %s: balance=%s currency=%s",
+                                 bot_key, bal, cur)
+                    else:
+                        log.error("Account check FAILED for %s: status=%s body=%s",
+                                  bot_key, resp.status, resp.body)
+                except Exception as exc:
+                    log.error("Account check error for %s: %s", bot_key, exc)
         except Exception:
             log.exception("Failed to initialise API for %s — strategy will be skipped", bot_key)
 
