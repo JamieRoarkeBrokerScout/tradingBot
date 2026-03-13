@@ -107,6 +107,15 @@ def init_db():
         """)
         cursor.execute("DROP TABLE _user_tokens_old")
 
+    # ── strategy_state: persists enabled/disabled across deploys ─────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS strategy_state (
+            name       TEXT PRIMARY KEY,
+            enabled    INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     # ── open_trades: live positions written by runner ────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS open_trades (
@@ -290,6 +299,37 @@ def get_open_trades() -> list[dict]:
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Strategy state helpers
+# ---------------------------------------------------------------------------
+
+_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium"]
+
+
+def get_strategy_states() -> dict:
+    """Return {name: {"enabled": bool}} for all strategies."""
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, enabled FROM strategy_state")
+    rows = {row["name"]: {"enabled": bool(row["enabled"])} for row in cursor.fetchall()}
+    conn.close()
+    result = {s: {"enabled": False} for s in _ALL_STRATEGIES}
+    result.update(rows)
+    return result
+
+
+def upsert_strategy_state(name: str, enabled: bool) -> None:
+    now = datetime.utcnow().isoformat()
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO strategy_state (name, enabled, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at""",
+        (name, int(enabled), now),
+    )
+    conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":

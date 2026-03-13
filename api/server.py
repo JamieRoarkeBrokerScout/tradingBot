@@ -47,6 +47,7 @@ from database.database import (
     get_user_by_email, get_session, create_session, delete_session,
     get_user_token, get_all_user_tokens, upsert_user_token, ALL_BOT_KEYS,
     get_open_trades,
+    get_strategy_states, upsert_strategy_state,
 )
 
 # Authorised users — plain passwords are hashed fresh at startup so there
@@ -290,16 +291,12 @@ def is_runner_running():
 
 
 def _load_strategy_state() -> dict:
-    try:
-        if STRATEGY_STATE_FILE.exists():
-            return json.loads(STRATEGY_STATE_FILE.read_text())
-    except Exception:
-        pass
-    return dict(_DEFAULT_STRATEGY_STATE)
+    return get_strategy_states()
 
 
 def _save_strategy_state(state: dict) -> None:
-    STRATEGY_STATE_FILE.write_text(json.dumps(state, indent=2))
+    for name, val in state.items():
+        upsert_strategy_state(name, bool(val.get("enabled", False)))
 
 
 def _start_runner(user_id: int) -> None:
@@ -593,6 +590,26 @@ def serve_frontend(path):
 init_db()
 seed_users(SEED_USERS)
 seed_tokens_from_env()
+
+# Auto-restart runner if strategies were enabled before this deploy
+def _autostart_runner():
+    state = get_strategy_states()
+    if not any(v.get("enabled") for v in state.values()):
+        return
+    # Find the first user who has tokens configured
+    for email, _ in _USER_ENV_PREFIX.items():
+        user = get_user_by_email(email)
+        if not user:
+            continue
+        if _build_creds_map(user["id"]):
+            try:
+                _start_runner(user["id"])
+                print(f"[autostart] runner restarted for {email}")
+            except Exception as exc:
+                print(f"[autostart] failed to restart runner: {exc}")
+            return
+
+_autostart_runner()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
