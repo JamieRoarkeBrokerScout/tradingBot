@@ -95,9 +95,10 @@ def _submit(api, sig) -> bool:
     for attempt in range(config.OANDA_MAX_RETRIES):
         try:
             if action == "close":
-                api.close_trade(sig.instrument, trade_units)
+                resp = api.close_trade(sig.instrument, trade_units)
             else:
-                api.create_order(sig.instrument, units=signed_units)
+                resp = api.create_order(sig.instrument, units=signed_units)
+            log.info("[runner] OANDA response: %s", resp)
             return True
         except Exception as exc:
             exc_str = str(exc)
