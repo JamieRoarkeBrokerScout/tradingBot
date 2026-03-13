@@ -403,24 +403,70 @@ def open_trades_route():
     if not trades:
         return jsonify([])
 
-    # Fetch live prices for all open instruments
     all_tokens = get_all_user_tokens(g.user_id)
-    prices: dict[str, float] = {}
-    token_row = next((r for r in all_tokens.values() if r.get("oanda_access_token")), None)
-    if token_row:
+
+    # Pull unrealised P&L directly from OANDA's openTrades endpoint per strategy account.
+    # OANDA uses the actual fill price so this is more accurate than our price calculation.
+    # oanda_pl[strategy][instrument] = sum of unrealizedPL across all OANDA trades for that instrument
+    # oanda_price[strategy][instrument] = average current price from OANDA
+    oanda_pl:    dict[str, dict[str, float]] = {}
+    oanda_price: dict[str, dict[str, float]] = {}
+
+    for strategy in {t["strategy"] for t in trades}:
+        row = all_tokens.get(strategy)
+        if not row or not row.get("oanda_access_token"):
+            continue
         try:
-            instruments = list({t["instrument"] for t in trades})
-            prices = _fetch_oanda_prices(token_row, instruments)
+            base = _oanda_base_url(row["oanda_account_type"])
+            resp = _requests.get(
+                f"{base}/accounts/{row['oanda_account_id']}/openTrades",
+                headers=_oanda_headers(row["oanda_access_token"]),
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                oanda_pl[strategy]    = {}
+                oanda_price[strategy] = {}
+                for ot in resp.json().get("trades", []):
+                    inst = ot.get("instrument", "")
+                    oanda_pl[strategy][inst] = (
+                        oanda_pl[strategy].get(inst, 0.0) + float(ot.get("unrealizedPL", 0))
+                    )
+                    # currentUnits is signed; price is the current market price stored by OANDA
+                    if "price" in ot:
+                        oanda_price[strategy][inst] = float(ot["price"])
         except Exception:
             pass
 
+    # Fall back to mid-price fetch for strategies where OANDA call failed
+    fallback_instruments = [
+        t["instrument"] for t in trades
+        if t["strategy"] not in oanda_pl
+    ]
+    prices: dict[str, float] = {}
+    if fallback_instruments:
+        token_row = next((r for r in all_tokens.values() if r.get("oanda_access_token")), None)
+        if token_row:
+            try:
+                prices = _fetch_oanda_prices(token_row, list(set(fallback_instruments)))
+            except Exception:
+                pass
+
     for t in trades:
-        current = prices.get(t["instrument"], 0.0)
-        t["current_price"] = current if current > 0 else None
-        if current > 0 and t.get("entry_price", 0) > 0:
-            t["unrealized_pl"] = (current - t["entry_price"]) * t["direction"] * t["units"]
+        strategy   = t["strategy"]
+        instrument = t["instrument"]
+
+        if strategy in oanda_pl and instrument in oanda_pl[strategy]:
+            # OANDA's accurate unrealized P&L (accounts for actual fill price + spread)
+            t["unrealized_pl"]  = oanda_pl[strategy][instrument]
+            t["current_price"]  = oanda_price[strategy].get(instrument) or prices.get(instrument)
         else:
-            t["unrealized_pl"] = None
+            # Fallback: mid-price estimate
+            current = prices.get(instrument, 0.0)
+            t["current_price"] = current if current > 0 else None
+            if current > 0 and t.get("entry_price", 0) > 0:
+                t["unrealized_pl"] = (current - t["entry_price"]) * t["direction"] * t["units"]
+            else:
+                t["unrealized_pl"] = None
 
     return jsonify(trades)
 
