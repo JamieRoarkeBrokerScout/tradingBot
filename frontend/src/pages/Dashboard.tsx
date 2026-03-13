@@ -31,6 +31,13 @@ const STRATEGY_META = [
         description: 'Fades IV spikes on SPX when IV/RV ratio ≥ 1.15. Hard kill at 2.0× or VIX > 30.',
         color: 'amber',
     },
+    {
+        key: 'crypto' as const,
+        label: 'Crypto',
+        subtitle: 'BTC & ETH',
+        description: 'RSI momentum + 50MA trend filter on BTC/ETH (H1). Runs 24/7. 2% NAV per trade.',
+        color: 'emerald',
+    },
 ] as const;
 
 type StrategyKey = typeof STRATEGY_META[number]['key'];
@@ -50,6 +57,11 @@ const STRATEGY_COLORS: Record<string, { badge: string; toggle: string; glow: str
         badge:  'bg-amber-100 text-amber-700 border-amber-200',
         toggle: 'bg-amber-500 hover:bg-amber-600',
         glow:   'shadow-amber-100',
+    },
+    emerald: {
+        badge:  'bg-emerald-100 text-emerald-700 border-emerald-200',
+        toggle: 'bg-emerald-600 hover:bg-emerald-700',
+        glow:   'shadow-emerald-100',
     },
 };
 
@@ -98,6 +110,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
             stat_arb:    { enabled: false },
             momentum:    { enabled: false },
             vol_premium: { enabled: false },
+            crypto:      { enabled: false },
         },
     });
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);
@@ -105,6 +118,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const [openTrades, setOpenTrades] = useState<OpenTrade[]>([]);
     const [accountData, setAccountData] = useState<AccountData>({});
     const [closingTrade, setClosingTrade] = useState<string | null>(null);
+    const [environment, setEnvironment] = useState<string>('staging');
 
     const fetchStats = async () => {
         try { const r = await apiFetch('/api/stats'); if (r.ok) setStats(await r.json()); } catch {}
@@ -119,6 +133,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                 const d = await r.json();
                 setBotRunning(d.bot_running);
                 if (d.config?.profile) setCurrentProfile(d.config.profile as ProfileKey);
+                if (d.environment) setEnvironment(d.environment);
             }
         } catch { setBotRunning(false); }
     };
@@ -213,11 +228,22 @@ export default function Dashboard({ session }: { session: AuthSession }) {
             <header className="bg-white border-b border-slate-200 px-4 md:px-8 py-4">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-500 to-blue-600 bg-clip-text text-transparent italic tracking-tight">
-                            MOMENTUM ENGINE
-                        </h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-500 to-blue-600 bg-clip-text text-transparent italic tracking-tight">
+                                MOMENTUM ENGINE
+                            </h1>
+                            {environment === 'production' ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-300 animate-pulse">
+                                    LIVE
+                                </span>
+                            ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-300">
+                                    STAGING
+                                </span>
+                            )}
+                        </div>
                         <p className="text-slate-400 text-[10px] font-mono uppercase tracking-[0.3em]">
-                            Live Trading System v4.2 • OANDA Practice
+                            {environment === 'production' ? 'Live Trading System • OANDA Live' : 'Staging • OANDA Practice'}
                         </p>
                     </div>
 
@@ -422,11 +448,11 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
                                 <BarChart3 size={12} /> Account Summary
                             </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                {(['stat_arb', 'momentum', 'vol_premium'] as const).map(key => {
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                                {(['stat_arb', 'momentum', 'vol_premium', 'crypto'] as const).map(key => {
                                     const acct = accountData[key];
                                     if (!acct || acct.error) return null;
-                                    const label = key === 'stat_arb' ? 'Stat Arb' : key === 'momentum' ? 'Momentum' : 'Vol Premium';
+                                    const label = key === 'stat_arb' ? 'Stat Arb' : key === 'momentum' ? 'Momentum' : key === 'vol_premium' ? 'Vol Premium' : 'Crypto';
                                     const plColor = acct.unrealized_pl >= 0 ? 'text-emerald-600' : 'text-rose-500';
                                     return (
                                         <div key={key} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">

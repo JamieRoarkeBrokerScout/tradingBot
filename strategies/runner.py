@@ -30,10 +30,11 @@ from pathlib import Path
 import tpqoa
 
 from strategies import config
-from strategies.base       import SafeguardsBase
-from strategies.stat_arb   import StatArbStrategy
-from strategies.momentum   import MomentumStrategy
-from strategies.vol_premium import VolPremiumStrategy
+from strategies.base            import SafeguardsBase
+from strategies.stat_arb        import StatArbStrategy
+from strategies.momentum        import MomentumStrategy
+from strategies.vol_premium     import VolPremiumStrategy
+from strategies.crypto_momentum import CryptoMomentumStrategy
 from database.database import (
     DB_PATH as _DB_PATH,
     upsert_open_trade, delete_open_trade, get_strategy_states,
@@ -49,7 +50,7 @@ log = logging.getLogger("runner")
 
 _PRICE_INSTRUMENTS = [
     "SPX500_USD", "XAU_USD", "XAG_USD", "BCO_USD", "NAS100_USD",
-    "EUR_USD", "GBP_USD",
+    "EUR_USD", "GBP_USD", "BTC_USD", "ETH_USD",
 ]
 
 
@@ -227,6 +228,8 @@ class Runner:
             self._strategies["momentum"]    = MomentumStrategy(apis["momentum"])
         if "vol_premium" in apis:
             self._strategies["vol_premium"] = VolPremiumStrategy(apis["vol_premium"])
+        if "crypto" in apis:
+            self._strategies["crypto"]      = CryptoMomentumStrategy(apis["crypto"])
 
         # Use any available API for shared calls (price polling, NAV)
         self._default_api = next(iter(apis.values()), None)
@@ -272,7 +275,7 @@ class Runner:
                 try:
                     if name == "vol_premium":
                         signals = strategy.tick(current_price=prices.get(config.VOL_INSTRUMENT))
-                    elif name == "momentum":
+                    elif name in ("momentum", "crypto"):
                         signals = strategy.tick(current_prices=prices)
                     else:
                         signals = strategy.tick()
