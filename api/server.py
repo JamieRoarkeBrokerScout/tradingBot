@@ -28,7 +28,6 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key")
 _FRONTEND_DIST = _project_root / "frontend" / "dist"
 CORS(app, supports_credentials=True, origins="*")
 
-DB_PATH              = _project_root / "database" / "trades.db"
 BOT_SCRIPT           = _project_root / "bot" / "momentum_trader_live.py"
 STRATEGY_STATE_FILE  = _project_root / "strategy_state.json"
 STRATEGY_RUNNER      = _project_root / "strategies" / "runner.py"
@@ -43,6 +42,7 @@ _DEFAULT_STRATEGY_STATE = {
 strategy_runner_process = None
 
 from database.database import (
+    DB_PATH,
     init_db, seed_users,
     get_user_by_email, get_session, create_session, delete_session,
     get_user_token, get_all_user_tokens, upsert_user_token, ALL_BOT_KEYS,
