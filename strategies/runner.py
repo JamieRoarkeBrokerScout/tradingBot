@@ -29,14 +29,15 @@ from pathlib import Path
 
 import tpqoa
 
-_DB_PATH = Path(_root) / "database" / "trades.db"
-
 from strategies import config
 from strategies.base       import SafeguardsBase
 from strategies.stat_arb   import StatArbStrategy
 from strategies.momentum   import MomentumStrategy
 from strategies.vol_premium import VolPremiumStrategy
-from database.database import upsert_open_trade, delete_open_trade
+from database.database import (
+    DB_PATH as _DB_PATH,
+    upsert_open_trade, delete_open_trade, get_strategy_states,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,20 +112,13 @@ def _submit(api, sig) -> bool:
     return False
 
 
-# ─── State file ───────────────────────────────────────────────────────────────
+# ─── State ────────────────────────────────────────────────────────────────────
 
-_DEFAULT_STATE = {
-    "stat_arb":    {"enabled": False},
-    "momentum":    {"enabled": False},
-    "vol_premium": {"enabled": False},
-}
-
-
-def _load_state(path: Path) -> dict:
+def _load_state() -> dict:
     try:
-        return json.loads(path.read_text())
+        return get_strategy_states()
     except Exception:
-        return dict(_DEFAULT_STATE)
+        return {"stat_arb": {"enabled": False}, "momentum": {"enabled": False}, "vol_premium": {"enabled": False}}
 
 
 # ─── Trade recording ──────────────────────────────────────────────────────────
@@ -168,12 +162,11 @@ def _record_trade(
 # ─── Runner ───────────────────────────────────────────────────────────────────
 
 class Runner:
-    def __init__(self, apis: dict, state_path: Path) -> None:
+    def __init__(self, apis: dict) -> None:
         """
         :param apis: {bot_key: tpqoa_instance} — one API connection per strategy account.
         """
-        self._apis       = apis
-        self._state_path = state_path
+        self._apis = apis
         # Instantiate each strategy only if credentials were provided for it
         self._strategies = {}
         if "stat_arb" in apis:
@@ -202,9 +195,9 @@ class Runner:
         while self._running:
             now = time.monotonic()
 
-            # Reload enabled flags from state file
+            # Reload enabled flags from DB
             if now - last_state_reload >= STATE_INTERVAL:
-                state = _load_state(self._state_path)
+                state = _load_state()
                 for name in self._strategies:
                     self._enabled[name] = state.get(name, {}).get("enabled", False)
                 last_state_reload = now
@@ -323,12 +316,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy runner")
     parser.add_argument("--creds", required=True,
                         help="Path to JSON file with per-strategy OANDA credentials")
-    parser.add_argument("--state", default=config.STATE_FILE_PATH,
-                        help="Path to strategy state JSON")
     args = parser.parse_args()
 
     creds_map = json.loads(Path(args.creds).read_text())
-    state_path = Path(args.state)
 
     # Build one tpqoa API instance per strategy that has credentials
     apis: dict = {}
@@ -344,7 +334,7 @@ def main() -> None:
         log.error("No valid OANDA credentials found. Exiting.")
         sys.exit(1)
 
-    runner = Runner(apis, state_path)
+    runner = Runner(apis)
 
     def _shutdown(signum, frame):
         log.info("Shutdown signal received")

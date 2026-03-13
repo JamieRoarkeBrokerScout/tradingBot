@@ -320,7 +320,6 @@ def _start_runner(user_id: int) -> None:
     cmd = [
         sys.executable, "-u", str(STRATEGY_RUNNER),
         "--creds", creds_file.name,
-        "--state", str(STRATEGY_STATE_FILE),
     ]
     strategy_runner_process = subprocess.Popen(
         cmd,
