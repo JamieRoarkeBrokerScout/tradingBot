@@ -96,14 +96,43 @@ def _submit(api, sig) -> bool:
         try:
             if action == "close":
                 resp = api.close_trade(sig.instrument, trade_units)
+                log.info("[runner] close_trade response: %s", resp)
+                return True
             else:
-                resp = api.create_order(sig.instrument, units=signed_units, ret=True)
-            log.info("[runner] OANDA response: %s", resp)
-            if resp is None:
-                log.warning("[runner] create_order returned None for %s — order may have been rejected",
-                            sig.instrument)
+                # Bypass tpqoa's create_order (silently returns None on error).
+                # Call the underlying v20 context directly to get the full response.
+                request = api.ctx.order.market(
+                    api.account_id,
+                    instrument=sig.instrument,
+                    units=signed_units,
+                )
+                body = request.body
+                status = request.status
+                log.info("[runner] OANDA status=%s body=%s", status, body)
+
+                if status == 429 or (isinstance(body, dict) and "TooManyRequests" in str(body)):
+                    log.warning("[runner] rate limit on %s; retry in %.1fs (attempt %d)",
+                                sig.instrument, delay, attempt + 1)
+                    time.sleep(delay)
+                    delay = min(delay * 2, config.OANDA_BACKOFF_MAX)
+                    continue
+
+                if isinstance(body, dict):
+                    if "orderRejectTransaction" in body:
+                        reason = body["orderRejectTransaction"]
+                        log.error("[runner] order REJECTED for %s: %s", sig.instrument, reason)
+                        return False
+                    if "orderFillTransaction" in body or "orderCreateTransaction" in body:
+                        log.info("[runner] order placed successfully for %s", sig.instrument)
+                        return True
+                    # Unexpected body — log everything for diagnosis
+                    log.error("[runner] unexpected OANDA response for %s (status=%s): %s",
+                              sig.instrument, status, body)
+                    return False
+
+                log.error("[runner] non-dict response body for %s: %s", sig.instrument, body)
                 return False
-            return True
+
         except Exception as exc:
             exc_str = str(exc)
             if "429" in exc_str or "TooManyRequests" in exc_str:
