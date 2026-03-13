@@ -35,7 +35,8 @@ from strategies.stat_arb        import StatArbStrategy
 from strategies.momentum        import MomentumStrategy
 from strategies.vol_premium     import VolPremiumStrategy
 from strategies.crypto_momentum import CryptoMomentumStrategy
-from strategies.brokers.kraken  import KrakenBroker
+from strategies.brokers.kraken         import KrakenBroker
+from strategies.brokers.kraken_futures import KrakenFuturesBroker
 from database.database import (
     DB_PATH as _DB_PATH,
     upsert_open_trade, delete_open_trade, get_strategy_states,
@@ -101,8 +102,8 @@ def _submit(api, sig) -> bool:
                         "check position sizing", sig.instrument, sig.units)
             return False
 
-    # ── Kraken broker path ────────────────────────────────────────────────────
-    if isinstance(api, KrakenBroker):
+    # ── Kraken broker path (spot or futures) ─────────────────────────────────
+    if isinstance(api, (KrakenBroker, KrakenFuturesBroker)):
         try:
             if action == "close":
                 ok = api.close_trade(sig.instrument, close_units)
@@ -416,7 +417,7 @@ def main() -> None:
             account_type = creds.get("account_type", "practice")
 
             if account_type == "kraken":
-                # Kraken: account_id = API key, access_token = API secret
+                # Kraken Spot: account_id = API key, access_token = API secret
                 broker = KrakenBroker(
                     api_key=creds["account_id"],
                     api_secret=creds["access_token"],
@@ -429,6 +430,23 @@ def main() -> None:
                     log.info("Kraken account verified for %s: balance=%s USD", bot_key, bal)
                 except Exception as exc:
                     log.error("Kraken account check error for %s: %s", bot_key, exc)
+            elif account_type in ("kraken_futures", "kraken_futures_demo"):
+                # Kraken Futures: account_id = API key, access_token = API secret
+                use_demo = account_type == "kraken_futures_demo"
+                broker = KrakenFuturesBroker(
+                    api_key=creds["account_id"],
+                    api_secret=creds["access_token"],
+                    use_demo=use_demo,
+                )
+                apis[bot_key] = broker
+                env_label = "demo" if use_demo else "live"
+                log.info("API initialised for %s (broker=kraken_futures %s)", bot_key, env_label)
+                try:
+                    summary = broker.get_account_summary()
+                    bal = summary.get("balance", "?")
+                    log.info("Kraken Futures account verified for %s: balance=%s USD", bot_key, bal)
+                except Exception as exc:
+                    log.error("Kraken Futures account check error for %s: %s", bot_key, exc)
             else:
                 cfg = _make_cfg_file(creds["account_id"], creds["access_token"], account_type)
                 apis[bot_key] = tpqoa.tpqoa(cfg)
