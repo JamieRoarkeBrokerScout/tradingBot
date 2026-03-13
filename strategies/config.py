@@ -24,7 +24,7 @@ STAT_ARB_MAX_AGE_DAYS    = 30
 STAT_ARB_NAV_PCT         = 0.015      # 1.5% NAV per leg
 STAT_ARB_STOP_ATR_MULT   = 2.5
 STAT_ARB_MIN_CORRELATION = 0.65
-STAT_ARB_MIN_SPREAD_STD  = 0.005
+STAT_ARB_MIN_SPREAD_STD  = 0.003
 
 # ─── Momentum ─────────────────────────────────────────────────────────────────
 MOMENTUM_INSTRUMENTS     = ["SPX500_USD", "XAU_USD"]
