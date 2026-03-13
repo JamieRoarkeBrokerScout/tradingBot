@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 WORKDIR /app
 
 # Force full rebuild — increment to bust Railway's layer cache
-ARG CACHEBUST=v40
+ARG CACHEBUST=v41
 RUN echo "Cache bust: $CACHEBUST"
 
 # Copy everything so any file change invalidates subsequent layers
