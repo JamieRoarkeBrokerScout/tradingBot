@@ -496,17 +496,36 @@ def close_open_trade(trade_key):
 
     try:
         base = _oanda_base_url(row["oanda_account_type"])
-        body = {"longUnits": "ALL"} if direction > 0 else {"shortUnits": "ALL"}
-        resp = _requests.put(
-            f"{base}/accounts/{row['oanda_account_id']}/positions/{instrument}/close",
-            headers=_oanda_headers(row["oanda_access_token"]),
-            json=body,
-            timeout=10,
+        url = f"{base}/accounts/{row['oanda_account_id']}/positions/{instrument}/close"
+        hdrs = _oanda_headers(row["oanda_access_token"])
+
+        # Try the expected direction first; if OANDA says no units, try the other direction.
+        for attempt_body in (
+            {"longUnits": "ALL"} if direction > 0 else {"shortUnits": "ALL"},
+            {"shortUnits": "ALL"} if direction > 0 else {"longUnits": "ALL"},
+        ):
+            resp = _requests.put(url, headers=hdrs, json=attempt_body, timeout=10)
+            if resp.status_code in (200, 201):
+                delete_open_trade(trade_key)
+                return jsonify({"status": "closed", "trade_key": trade_key})
+            err_text = resp.text or ""
+            # If no units in this direction, try the opposite
+            if "NO_UNITS_TO_CLOSEOUT" in err_text:
+                continue
+            break
+
+        # Position doesn't exist on OANDA (already closed by stop/TP, or stale DB record).
+        # Clean up the DB row so the UI stops showing it.
+        already_gone = (
+            resp.status_code == 404
+            or "CLOSEOUT_POSITION_DOESNT_EXIST" in err_text
+            or "NO_UNITS_TO_CLOSEOUT" in err_text
         )
-        if resp.status_code in (200, 201):
+        if already_gone:
             delete_open_trade(trade_key)
-            return jsonify({"status": "closed", "trade_key": trade_key})
-        return jsonify({"error": f"OANDA {resp.status_code}: {resp.text[:300]}"}), 400
+            return jsonify({"status": "removed_stale", "trade_key": trade_key})
+
+        return jsonify({"error": f"OANDA {resp.status_code}: {err_text[:300]}"}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

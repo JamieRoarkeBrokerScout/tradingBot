@@ -135,8 +135,13 @@ export default function Dashboard({ session }: { session: AuthSession }) {
             if (r.ok) {
                 await fetchOpenTrades();
                 await fetchAccount();
+            } else {
+                const d = await r.json().catch(() => ({}));
+                setStrategyError(d.error ?? `Failed to close trade (${r.status})`);
             }
-        } catch {}
+        } catch {
+            setStrategyError('Network error — could not close trade');
+        }
         setClosingTrade(null);
     };
     const fetchStrategies = async () => {

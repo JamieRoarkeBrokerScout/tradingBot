@@ -17,13 +17,13 @@ STAT_ARB_PAIRS = [
 ]
 STAT_ARB_LOOKBACK_DAYS   = 60
 STAT_ARB_POLL_SECONDS    = 300        # 5 minutes
-STAT_ARB_ENTRY_Z         = 2.0
+STAT_ARB_ENTRY_Z         = 1.5
 STAT_ARB_EXIT_Z          = 0.5
 STAT_ARB_EMERGENCY_Z     = 3.5
 STAT_ARB_MAX_AGE_DAYS    = 30
 STAT_ARB_NAV_PCT         = 0.05       # 5% NAV per leg
 STAT_ARB_STOP_ATR_MULT   = 2.5
-STAT_ARB_MIN_CORRELATION = 0.65
+STAT_ARB_MIN_CORRELATION = 0.40
 STAT_ARB_MIN_SPREAD_STD  = 0.003
 
 # ─── Momentum ─────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ VOL_INSTRUMENT           = "SPX500_USD"
 VOL_POLL_SECONDS         = 900        # 15 minutes
 VOL_IV_ATR_PERIOD        = 20
 VOL_RV_PERIOD            = 30
-VOL_ENTRY_RATIO_MIN      = 1.15
+VOL_ENTRY_RATIO_MIN      = 1.08
 VOL_ENTRY_RATIO_MAX      = 2.0
 VOL_KILL_RATIO           = 2.0
 VOL_VIX_DISABLE          = 30
