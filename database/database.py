@@ -302,6 +302,41 @@ def delete_open_trade(trade_key: str) -> None:
     conn.close()
 
 
+def record_closed_trade(
+    instrument: str,
+    direction: int,
+    units: float,
+    entry_price: float,
+    exit_price: float,
+    entry_time: str,
+    exit_time: str,
+    exit_reason: str,
+    raw_pl: float,
+    strategy_name: str = "",
+) -> None:
+    """Write a manually-closed trade to the trades table."""
+    if entry_price <= 0 or exit_price <= 0:
+        return
+    pl_points = (exit_price - entry_price) * direction
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO trades
+               (entry_time, exit_time, instrument, direction, entry_units,
+                entry_price, exit_price, exit_reason,
+                pl_points, pl_R, raw_pl,
+                bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode,
+                strategy_name, entry_metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (entry_time, exit_time, instrument, direction, int(units),
+         entry_price, exit_price, exit_reason,
+         pl_points, 0.0, raw_pl,
+         None, None, None, None, None, None,
+         strategy_name or None, None),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_open_trades() -> list[dict]:
     conn = _connect()
     conn.row_factory = sqlite3.Row

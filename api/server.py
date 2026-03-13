@@ -51,6 +51,7 @@ from database.database import (
     get_user_token, get_all_user_tokens, upsert_user_token, ALL_BOT_KEYS,
     get_open_trades,
     get_strategy_states, upsert_strategy_state,
+    record_closed_trade,
 )
 
 # Authorised users — plain passwords are hashed fresh at startup so there
@@ -508,6 +509,31 @@ def close_open_trade(trade_key):
         ):
             resp = _requests.put(url, headers=hdrs, json=attempt_body, timeout=10)
             if resp.status_code in (200, 201):
+                # Parse exit price and P&L from OANDA response
+                try:
+                    body     = resp.json()
+                    fill_txn = body.get("longOrderFillTransaction") or body.get("shortOrderFillTransaction") or {}
+                    raw_pl   = float(fill_txn.get("pl", 0) or 0)
+                    exit_price = float(fill_txn.get("price", trade.get("entry_price", 0)) or 0)
+                    entry_price = float(trade.get("entry_price", 0) or 0)
+                    units       = float(trade.get("units", 1) or 1)
+                    entry_time  = trade.get("entry_time", "")
+                    from datetime import datetime, timezone
+                    exit_time = datetime.now(timezone.utc).isoformat()
+                    record_closed_trade(
+                        instrument=instrument,
+                        direction=direction,
+                        units=units,
+                        entry_price=entry_price,
+                        exit_price=exit_price if exit_price > 0 else entry_price,
+                        entry_time=entry_time,
+                        exit_time=exit_time,
+                        exit_reason="manual_close",
+                        raw_pl=raw_pl,
+                        strategy_name=strategy,
+                    )
+                except Exception:
+                    pass  # recording failure must not block the close response
                 delete_open_trade(trade_key)
                 return jsonify({"status": "closed", "trade_key": trade_key})
             err_text = resp.text or ""
