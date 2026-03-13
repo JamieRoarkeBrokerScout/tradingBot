@@ -66,8 +66,8 @@ class KrakenFuturesBroker:
     """Kraken Futures REST API adapter (live or demo)."""
 
     def __init__(self, api_key: str, api_secret: str, use_demo: bool = True) -> None:
-        self._key    = api_key
-        self._secret = api_secret
+        self._key    = api_key.strip()
+        self._secret = api_secret.strip()
         self._base   = _DEMO_BASE if use_demo else _LIVE_BASE
         self.account_id = "kraken_futures_demo" if use_demo else "kraken_futures"
         self.hostname   = _DEMO_BASE.split("//")[1] if use_demo else _LIVE_BASE.split("//")[1]
@@ -269,10 +269,13 @@ class KrakenFuturesBroker:
         post_data = urllib.parse.urlencode(data) if method == "POST" else ""
 
         # Kraken Futures signature: SHA256(postData + nonce + endpoint) → HMAC-SHA512
-        message      = (post_data + nonce + endpoint).encode("utf-8")
-        sha256_hash  = hashlib.sha256(message).digest()
-        signature    = base64.b64encode(
-            hmac.new(base64.b64decode(self._secret), sha256_hash, hashlib.sha512).digest()
+        # Secret is base64-encoded; add padding if needed before decoding.
+        secret_padded = self._secret + "=" * (-len(self._secret) % 4)
+        secret_bytes  = base64.b64decode(secret_padded)
+        message       = (post_data + nonce + endpoint).encode("utf-8")
+        sha256_hash   = hashlib.sha256(message).digest()
+        signature     = base64.b64encode(
+            hmac.new(secret_bytes, sha256_hash, hashlib.sha512).digest()
         ).decode()
 
         headers = {
@@ -287,6 +290,9 @@ class KrakenFuturesBroker:
         else:
             resp = requests.get(url, headers=headers, timeout=10)
 
+        if resp.status_code != 200:
+            log.error("[kraken_futures] %s %s → HTTP %s: %s",
+                      method, endpoint, resp.status_code, resp.text[:300])
         resp.raise_for_status()
         return resp.json()
 
