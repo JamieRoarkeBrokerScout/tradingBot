@@ -3,8 +3,9 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "database" / "trades.db"
-DB_PATH.parent.mkdir(exist_ok=True)
+import os as _os
+DB_PATH = Path(_os.environ.get("DB_PATH", str(Path(__file__).parent.parent / "data" / "trades.db")))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _connect():
