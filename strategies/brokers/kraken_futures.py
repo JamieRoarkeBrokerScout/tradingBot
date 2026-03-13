@@ -106,9 +106,7 @@ class KrakenFuturesBroker:
         )
         resp.raise_for_status()
         body = resp.json()
-        if body.get("result") != "success":
-            raise RuntimeError(f"Kraken Futures OHLC error: {body}")
-
+        # OHLC endpoint returns {"candles": [...], "more_candles": bool} — no "result" field
         candles = body.get("candles", [])
         if not candles:
             raise RuntimeError(f"No OHLC data returned for {symbol}")
@@ -231,17 +229,27 @@ class KrakenFuturesBroker:
         """Return balance/equity info from the flex account."""
         result = self._private("GET", "/derivatives/api/v3/accounts")
         if result.get("result") != "success":
-            return {}
+            log.warning("[kraken_futures] accounts response: %s", result)
+            return {"balance": 0.0, "nav": 0.0, "currency": "USD"}
 
         accounts = result.get("accounts", {})
-        flex     = accounts.get("flex", {})
-        cash_bal = accounts.get("cash", {}).get("balances", {}).get("usd", 0.0)
 
-        portfolio_value  = float(flex.get("portfolioValue",  cash_bal) or cash_bal)
-        pnl              = float(flex.get("pnl",             0)  or 0)
-        margin_reqs      = flex.get("marginRequirements", {})
-        margin_used      = float(margin_reqs.get("initialMargin",   0) or 0)
-        margin_avail     = float(flex.get("availableMargin",        portfolio_value) or portfolio_value)
+        # Prefer flex account (margin), fall back to cash
+        flex     = accounts.get("flex", {})
+        cash     = accounts.get("cash", {})
+        cash_bal = 0.0
+        try:
+            # cash.balances may be keyed by currency code in various cases
+            balances = cash.get("balances", {})
+            cash_bal = float(next(iter(balances.values()), 0) or 0)
+        except Exception:
+            pass
+
+        portfolio_value = float(flex.get("portfolioValue", cash_bal) or cash_bal)
+        pnl             = float(flex.get("pnl", 0) or 0)
+        margin_reqs     = flex.get("marginRequirements", {})
+        margin_used     = float(margin_reqs.get("initialMargin", 0) or 0)
+        margin_avail    = float(flex.get("availableMargin", portfolio_value) or portfolio_value)
 
         return {
             "balance":       portfolio_value,
