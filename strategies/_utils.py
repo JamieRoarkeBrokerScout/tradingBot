@@ -26,8 +26,8 @@ def oanda_history(api, instrument: str, start: datetime, end: datetime,
         try:
             df = api.get_history(
                 instrument=instrument,
-                start=start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                end=end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                start=start.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S"),
+                end=end.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S"),
                 granularity=granularity,
                 price="M",
             )
