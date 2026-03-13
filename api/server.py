@@ -565,9 +565,11 @@ def close_open_trade(trade_key):
 @app.route("/api/account", methods=["GET"])
 @require_auth
 def get_account():
-    """Fetch live balance, equity, margin and leverage from OANDA for each strategy account."""
+    """Fetch live balance, equity, margin and leverage from each strategy account."""
     all_tokens = get_all_user_tokens(g.user_id)
     result: dict = {}
+
+    # ── OANDA accounts ────────────────────────────────────────────────────────
     for bot_key in ["stat_arb", "momentum", "vol_premium"]:
         row = all_tokens.get(bot_key)
         if not row or not row.get("oanda_access_token"):
@@ -581,8 +583,8 @@ def get_account():
             )
             if resp.status_code == 200:
                 acct = resp.json().get("account", {})
-                nav          = float(acct.get("NAV", 0) or 0)
-                margin_used  = float(acct.get("marginUsed", 0) or 0)
+                nav         = float(acct.get("NAV", 0) or 0)
+                margin_used = float(acct.get("marginUsed", 0) or 0)
                 result[bot_key] = {
                     "account_id":       row["oanda_account_id"],
                     "balance":          float(acct.get("balance", 0) or 0),
@@ -598,6 +600,43 @@ def get_account():
                 result[bot_key] = {"error": f"HTTP {resp.status_code}"}
         except Exception as exc:
             result[bot_key] = {"error": str(exc)}
+
+    # ── Kraken Futures (crypto) account ───────────────────────────────────────
+    crypto_row = all_tokens.get("crypto")
+    if crypto_row and crypto_row.get("oanda_access_token"):
+        account_type = crypto_row.get("oanda_account_type", "")
+        if account_type in ("kraken_futures", "kraken_futures_demo"):
+            try:
+                from strategies.brokers.kraken_futures import KrakenFuturesBroker
+                broker = KrakenFuturesBroker(
+                    api_key=crypto_row["oanda_account_id"],
+                    api_secret=crypto_row["oanda_access_token"],
+                    use_demo=(account_type == "kraken_futures_demo"),
+                )
+                summary = broker.get_account_summary()
+                nav         = float(summary.get("nav", 0) or 0)
+                margin_used = float(summary.get("margin_used", 0) or 0)
+                # Count open positions
+                open_count = 0
+                try:
+                    positions = broker._get_open_positions()
+                    open_count = len([p for p in positions if float(p.get("size", 0)) != 0])
+                except Exception:
+                    pass
+                result["crypto"] = {
+                    "account_id":       broker.account_id,
+                    "balance":          float(summary.get("balance", 0) or 0),
+                    "nav":              nav,
+                    "unrealized_pl":    float(summary.get("unrealized_pl", 0) or 0),
+                    "margin_used":      margin_used,
+                    "margin_available": float(summary.get("margin_free", nav) or nav),
+                    "open_trade_count": open_count,
+                    "margin_pct":       round(margin_used / nav * 100, 1) if nav > 0 else 0,
+                    "currency":         "USD",
+                }
+            except Exception as exc:
+                result["crypto"] = {"error": str(exc)}
+
     return jsonify(result)
 
 

@@ -270,8 +270,11 @@ class KrakenFuturesBroker:
 
         # Kraken Futures signature: SHA256(postData + nonce + endpoint) → HMAC-SHA512
         # Secret is base64-encoded; add padding if needed before decoding.
-        secret_padded = self._secret + "=" * (-len(self._secret) % 4)
-        secret_bytes  = base64.b64decode(secret_padded)
+        try:
+            secret_padded = self._secret + "=" * (-len(self._secret) % 4)
+            secret_bytes  = base64.b64decode(secret_padded)
+        except Exception:
+            secret_bytes = self._secret.encode("utf-8")
         message       = (post_data + nonce + endpoint).encode("utf-8")
         sha256_hash   = hashlib.sha256(message).digest()
         signature     = base64.b64encode(
