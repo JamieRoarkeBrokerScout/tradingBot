@@ -268,18 +268,26 @@ class KrakenFuturesBroker:
         nonce     = str(int(time.time() * 1000))
         post_data = urllib.parse.urlencode(data) if method == "POST" else ""
 
-        # Kraken Futures signature per official support article:
-        #   Base64(HMAC-SHA512(Base64-Decode(apiSecret), SHA256(nonce + postData + endpointPath)))
-        secret_clean = self._secret.replace(" ", "+")
+        # Kraken Futures signature (per official CF REST v3 Python SDK):
+        #   sha256   = SHA256(nonce + postData)
+        #   hmac_msg = signing_path_bytes + sha256_bytes
+        #   Authent  = Base64(HMAC-SHA512(Base64-Decode(apiSecret), hmac_msg))
+        # The signing path strips the /derivatives prefix:
+        #   /derivatives/api/v3/accounts → /api/v3/accounts
+        signing_path = endpoint.replace("/derivatives", "")
+
+        secret_clean = self._secret.strip()
         try:
             secret_padded = secret_clean + "=" * (-len(secret_clean) % 4)
             secret_bytes  = base64.b64decode(secret_padded)
         except Exception as e:
             log.error("[kraken_futures] base64 decode failed: %s", e)
             secret_bytes = secret_clean.encode("utf-8")
-        sha256_hash = hashlib.sha256((nonce + post_data + endpoint).encode("utf-8")).digest()
+
+        sha256_hash = hashlib.sha256((nonce + post_data).encode("utf-8")).digest()
+        hmac_input  = signing_path.encode("utf-8") + sha256_hash
         signature   = base64.b64encode(
-            hmac.new(secret_bytes, sha256_hash, hashlib.sha512).digest()
+            hmac.new(secret_bytes, hmac_input, hashlib.sha512).digest()
         ).decode()
 
         headers = {
