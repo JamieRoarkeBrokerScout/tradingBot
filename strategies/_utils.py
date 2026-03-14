@@ -48,9 +48,12 @@ def _oanda_history(api, instrument: str, start: datetime, end: datetime,
             return df
         except Exception as exc:
             last_exc = exc
-            if "429" in str(exc) or "TooManyRequests" in str(exc.__class__.__name__):
-                log.warning("Rate limit on %s; retry in %.1fs (attempt %d/%d)",
-                            instrument, delay, attempt + 1, config.OANDA_MAX_RETRIES)
+            is_rate_limit = "429" in str(exc) or "TooManyRequests" in str(exc.__class__.__name__)
+            # tpqoa raises AttributeError when the OANDA response body is None (transient)
+            is_transient  = isinstance(exc, AttributeError) or is_rate_limit
+            if is_transient:
+                log.warning("Transient error fetching %s (%s); retry in %.1fs (attempt %d/%d)",
+                            instrument, exc, delay, attempt + 1, config.OANDA_MAX_RETRIES)
                 time.sleep(delay)
                 delay = min(delay * 2, config.OANDA_BACKOFF_MAX)
             else:
