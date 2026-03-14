@@ -268,8 +268,8 @@ class KrakenFuturesBroker:
         nonce     = str(int(time.time() * 1000))
         post_data = urllib.parse.urlencode(data) if method == "POST" else ""
 
-        # Kraken Futures signature (official spec):
-        #   SHA256(postData + nonce + endpointPath) → HMAC-SHA512(decoded_secret, sha256)
+        # Kraken Futures signature per official support article:
+        #   Base64(HMAC-SHA512(Base64-Decode(apiSecret), SHA256(nonce + postData + endpointPath)))
         secret_clean = self._secret.replace(" ", "+")
         try:
             secret_padded = secret_clean + "=" * (-len(secret_clean) % 4)
@@ -277,7 +277,7 @@ class KrakenFuturesBroker:
         except Exception as e:
             log.error("[kraken_futures] base64 decode failed: %s", e)
             secret_bytes = secret_clean.encode("utf-8")
-        sha256_hash = hashlib.sha256((post_data + nonce + endpoint).encode("utf-8")).digest()
+        sha256_hash = hashlib.sha256((nonce + post_data + endpoint).encode("utf-8")).digest()
         signature   = base64.b64encode(
             hmac.new(secret_bytes, sha256_hash, hashlib.sha512).digest()
         ).decode()
