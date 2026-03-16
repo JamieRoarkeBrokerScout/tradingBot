@@ -34,9 +34,16 @@ const STRATEGY_META = [
     {
         key: 'crypto' as const,
         label: 'Crypto',
-        subtitle: 'BTC & ETH',
-        description: 'RSI momentum + 50MA trend filter on BTC/ETH (H1). Runs 24/7. 2% NAV per trade.',
+        subtitle: 'BTC, ETH & SOL',
+        description: 'RSI momentum + 50MA trend filter on BTC/ETH/SOL (H1). Runs 24/7. 2% NAV per trade.',
         color: 'emerald',
+    },
+    {
+        key: 'daily_target' as const,
+        label: 'Daily Target',
+        subtitle: '+2% / Day',
+        description: 'RSI + 20MA on M15 across EUR, GBP, NAS100, XAU, SPX. Stops at +2% daily P&L, halts at -3% loss.',
+        color: 'rose',
     },
 ] as const;
 
@@ -62,6 +69,11 @@ const STRATEGY_COLORS: Record<string, { badge: string; toggle: string; glow: str
         badge:  'bg-emerald-100 text-emerald-700 border-emerald-200',
         toggle: 'bg-emerald-600 hover:bg-emerald-700',
         glow:   'shadow-emerald-100',
+    },
+    rose: {
+        badge:  'bg-rose-100 text-rose-700 border-rose-200',
+        toggle: 'bg-rose-600 hover:bg-rose-700',
+        glow:   'shadow-rose-100',
     },
 };
 
@@ -107,10 +119,11 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const [strategies, setStrategies] = useState<StrategiesResponse>({
         runner_running: false,
         strategies: {
-            stat_arb:    { enabled: false },
-            momentum:    { enabled: false },
-            vol_premium: { enabled: false },
-            crypto:      { enabled: false },
+            stat_arb:      { enabled: false },
+            momentum:      { enabled: false },
+            vol_premium:   { enabled: false },
+            crypto:        { enabled: false },
+            daily_target:  { enabled: false },
         },
     });
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);
