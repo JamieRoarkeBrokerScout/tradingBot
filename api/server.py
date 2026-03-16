@@ -648,7 +648,7 @@ def get_account():
     result: dict = {}
 
     # ── OANDA accounts ────────────────────────────────────────────────────────
-    for bot_key in ["stat_arb", "momentum", "vol_premium"]:
+    for bot_key in ["stat_arb", "momentum", "vol_premium", "daily_target"]:
         row = all_tokens.get(bot_key)
         if not row or not row.get("oanda_access_token"):
             continue
@@ -771,6 +771,15 @@ def get_stats():
     """)
     by_strategy = {row["strategy_name"]: dict(row) for row in cursor.fetchall()}
 
+    cursor.execute("""
+        SELECT strategy_name,
+            COALESCE(SUM(raw_pl), 0) as pl_today
+        FROM trades
+        WHERE strategy_name IS NOT NULL AND DATE(exit_time) = DATE('now')
+        GROUP BY strategy_name
+    """)
+    today_by_strategy = {row["strategy_name"]: row["pl_today"] for row in cursor.fetchall()}
+
     conn.close()
     n = alltime["total_trades"] or 0
     w = alltime["total_wins"] or 0
@@ -778,7 +787,7 @@ def get_stats():
     gl = abs(alltime["gross_loss"])
     alltime["profit_factor"] = round(alltime["gross_profit"] / gl, 2) if gl > 0 else None
 
-    return jsonify({**today, "alltime": alltime, "by_strategy": by_strategy})
+    return jsonify({**today, "alltime": alltime, "by_strategy": by_strategy, "today_by_strategy": today_by_strategy})
 
 
 # ---------------------------------------------------------------------------

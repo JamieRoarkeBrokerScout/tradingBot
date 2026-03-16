@@ -53,13 +53,14 @@ _GRAN: dict[str, str] = {
     "H1": "1h", "H4": "4h", "D": "1d", "W": "1w",
 }
 
-# Minimum order size in USD per instrument
-_MIN_USD: dict[str, float] = {
-    "PF_XBTUSD": 1.0,
-    "PF_ETHUSD": 1.0,
-    "PF_LTCUSD": 1.0,
-    "PF_XRPUSD": 1.0,
-    "PF_BCHUSD": 1.0,
+# Minimum order size in coin (base currency) per instrument
+_MIN_COINS: dict[str, float] = {
+    "PF_XBTUSD": 0.001,
+    "PF_ETHUSD": 0.01,
+    "PF_SOLUSD": 0.1,
+    "PF_LTCUSD": 0.1,
+    "PF_XRPUSD": 10.0,
+    "PF_BCHUSD": 0.01,
 }
 
 
@@ -171,25 +172,26 @@ class KrakenFuturesBroker:
         side   = "buy" if signed_units > 0 else "sell"
         close_side = "sell" if signed_units > 0 else "buy"
 
-        # Convert coin units → USD contract size using current mid price
-        try:
-            _, _, mid = self.get_prices(instrument)
-        except Exception as exc:
-            return {"filled": False, "error": f"price fetch failed: {exc}"}
-
-        size_usd = max(1, round(abs(signed_units) * mid))
-        min_usd  = _MIN_USD.get(symbol, 1.0)
-        if size_usd < min_usd:
-            return {"filled": False, "error": f"size ${size_usd} below minimum ${min_usd}"}
+        # PF_* perpetuals are coin-denominated — send coin amount directly
+        size_coins = abs(signed_units)
+        min_coins  = _MIN_COINS.get(symbol, 0.001)
+        if size_coins < min_coins:
+            return {"filled": False, "error": f"size {size_coins} below minimum {min_coins} coins"}
 
         # Log available margin before attempting order to aid diagnosis
+        try:
+            _, _, mid = self.get_prices(instrument)
+            notional  = size_coins * mid
+        except Exception:
+            mid      = 0.0
+            notional = 0.0
         try:
             acct = self._private("GET", "/derivatives/api/v3/accounts")
             flex = acct.get("accounts", {}).get("flex", {})
             avail = flex.get("availableMargin", "?")
             pv    = flex.get("portfolioValue", "?")
-            log.info("[kraken_futures] pre-order check: portfolioValue=%s availableMargin=%s orderSize=$%d",
-                     pv, avail, size_usd)
+            log.info("[kraken_futures] pre-order check: portfolioValue=%s availableMargin=%s coins=%.6f notional≈$%.0f",
+                     pv, avail, size_coins, notional)
         except Exception:
             pass
 
@@ -197,7 +199,7 @@ class KrakenFuturesBroker:
             "orderType": "mkt",
             "symbol":    symbol,
             "side":      side,
-            "size":      str(int(size_usd)),
+            "size":      f"{size_coins:.6f}",
         }
         result = self._private("POST", "/derivatives/api/v3/sendorder", data)
         if result.get("result") != "success":
@@ -208,8 +210,8 @@ class KrakenFuturesBroker:
         send_status = result.get("sendStatus", {})
         order_id    = send_status.get("order_id", "")
         status      = send_status.get("status", "")
-        log.info("[kraken_futures] order %s %s size=$%d status=%s id=%s",
-                 side, symbol, size_usd, status, order_id)
+        log.info("[kraken_futures] order %s %s coins=%.6f notional≈$%.0f status=%s id=%s",
+                 side, symbol, size_coins, notional, status, order_id)
 
         # Only treat "placed" or "filled" as a successful fill
         _FILLED = {"placed", "filled", "partiallyFilled"}
@@ -223,14 +225,14 @@ class KrakenFuturesBroker:
                 "orderType": "stp",
                 "symbol":    symbol,
                 "side":      close_side,
-                "size":      str(int(size_usd)),
-                "stopPrice": str(round(stop_price, 2)),
+                "size":      f"{size_coins:.6f}",
+                "stopPrice": str(round(stop_price, 6)),
             }
             try:
                 sl_result = self._private("POST", "/derivatives/api/v3/sendorder", sl_data)
                 if sl_result.get("result") == "success":
                     sl_id = sl_result.get("sendStatus", {}).get("order_id", "")
-                    log.info("[kraken_futures] SL order placed at %.2f id=%s", stop_price, sl_id)
+                    log.info("[kraken_futures] SL order placed at %s id=%s", stop_price, sl_id)
                 else:
                     log.warning("[kraken_futures] SL order failed: %s", sl_result.get("error"))
             except Exception as exc:
@@ -242,14 +244,14 @@ class KrakenFuturesBroker:
                 "orderType":  "lmt",
                 "symbol":     symbol,
                 "side":       close_side,
-                "size":       str(int(size_usd)),
-                "limitPrice": str(round(tp_price, 2)),
+                "size":       f"{size_coins:.6f}",
+                "limitPrice": str(round(tp_price, 6)),
             }
             try:
                 tp_result = self._private("POST", "/derivatives/api/v3/sendorder", tp_data)
                 if tp_result.get("result") == "success":
                     tp_id = tp_result.get("sendStatus", {}).get("order_id", "")
-                    log.info("[kraken_futures] TP order placed at %.2f id=%s", tp_price, tp_id)
+                    log.info("[kraken_futures] TP order placed at %s id=%s", tp_price, tp_id)
                 else:
                     log.warning("[kraken_futures] TP order failed: %s", tp_result.get("error"))
             except Exception as exc:
@@ -275,16 +277,16 @@ class KrakenFuturesBroker:
             log.info("[kraken_futures] close_trade: position for %s already closed", symbol)
             return True
 
-        side     = "sell" if holding["side"] == "long" else "buy"
-        size_usd = int(float(holding.get("size", 0)))
-        if size_usd < 1:
+        side       = "sell" if holding["side"] == "long" else "buy"
+        size_coins = float(holding.get("size", 0))
+        if size_coins <= 0:
             return True
 
         data = {
             "orderType": "mkt",
             "symbol":    symbol,
             "side":      side,
-            "size":      str(size_usd),
+            "size":      f"{size_coins:.6f}",
         }
         result = self._private("POST", "/derivatives/api/v3/sendorder", data)
         if result.get("result") != "success":
@@ -336,12 +338,12 @@ class KrakenFuturesBroker:
                         _, _, mid = self.get_prices(inst)
                     except Exception:
                         continue
-                    entry = float(pos.get("price", 0) or 0)
-                    size  = float(pos.get("size", 0) or 0)   # USD contracts
-                    side  = 1 if pos.get("side") == "long" else -1
-                    if entry > 0 and size > 0:
-                        # P&L in USD: size contracts × (mid - entry) / entry for perp
-                        pnl += side * size * (mid - entry) / entry
+                    entry      = float(pos.get("price", 0) or 0)
+                    size_coins = float(pos.get("size", 0) or 0)  # coin-denominated
+                    pos_side   = 1 if pos.get("side") == "long" else -1
+                    if entry > 0 and size_coins > 0:
+                        # P&L in USD: coins × (mid - entry)
+                        pnl += pos_side * size_coins * (mid - entry)
             except Exception as exc:
                 log.warning("[kraken_futures] fallback pnl calc failed: %s", exc)
 

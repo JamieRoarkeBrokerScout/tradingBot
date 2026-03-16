@@ -461,14 +461,22 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                 <BarChart3 size={12} /> Account Summary
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                {(['stat_arb', 'momentum', 'vol_premium', 'crypto'] as const).map(key => {
+                                {(['stat_arb', 'momentum', 'vol_premium', 'crypto', 'daily_target'] as const).map(key => {
                                     const acct = accountData[key];
                                     if (!acct || acct.error) return null;
-                                    const label = key === 'stat_arb' ? 'Stat Arb' : key === 'momentum' ? 'Momentum' : key === 'vol_premium' ? 'Vol Premium' : 'Crypto';
+                                    const LABELS: Record<string, string> = {
+                                        stat_arb: 'Stat Arb', momentum: 'Momentum',
+                                        vol_premium: 'Vol Premium', crypto: 'Crypto',
+                                        daily_target: 'Daily Target',
+                                    };
                                     const plColor = acct.unrealized_pl >= 0 ? 'text-emerald-600' : 'text-rose-500';
+                                    const isDailyTarget = key === 'daily_target';
+                                    const dailyPct = isDailyTarget && acct.nav > 0
+                                        ? (stats.today_by_strategy?.daily_target ?? 0) / acct.nav * 100
+                                        : null;
                                     return (
                                         <div key={key} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3">{label}</p>
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-3">{LABELS[key]}</p>
                                             <div className="space-y-2">
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-[10px] text-slate-500">Balance</span>
@@ -484,10 +492,28 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                         {acct.unrealized_pl >= 0 ? '+' : ''}${acct.unrealized_pl.toFixed(2)}
                                                     </span>
                                                 </div>
-                                                <div className="flex justify-between items-center pt-1 border-t border-slate-100">
-                                                    <span className="text-[10px] text-slate-500">Margin Used</span>
-                                                    <span className="font-mono text-slate-600 text-xs">${acct.margin_used.toFixed(2)} ({acct.margin_pct}%)</span>
-                                                </div>
+                                                {isDailyTarget && dailyPct !== null && (
+                                                    <div className="pt-1 border-t border-slate-100">
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <span className="text-[10px] text-slate-500">Today's Progress</span>
+                                                            <span className={`font-mono font-bold text-xs ${dailyPct >= 2 ? 'text-emerald-600' : dailyPct <= -3 ? 'text-rose-500' : 'text-slate-700'}`}>
+                                                                {dailyPct >= 0 ? '+' : ''}{dailyPct.toFixed(2)}% / 2%
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                            <div
+                                                                className={`h-1.5 rounded-full transition-all ${dailyPct >= 2 ? 'bg-emerald-500' : dailyPct < 0 ? 'bg-rose-400' : 'bg-blue-500'}`}
+                                                                style={{ width: `${Math.min(100, Math.abs(dailyPct) / 2 * 100)}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {!isDailyTarget && (
+                                                    <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                                        <span className="text-[10px] text-slate-500">Margin Used</span>
+                                                        <span className="font-mono text-slate-600 text-xs">${acct.margin_used.toFixed(2)} ({acct.margin_pct}%)</span>
+                                                    </div>
+                                                )}
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-[10px] text-slate-500">Positions</span>
                                                     <span className="font-mono text-slate-600 text-xs">{acct.open_trade_count}</span>

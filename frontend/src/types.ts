@@ -30,6 +30,7 @@ export interface Stats {
     losses: number;
     alltime?: AlltimeStats;
     by_strategy?: Record<string, { trades: number; pl: number; wins: number; losses: number }>;
+    today_by_strategy?: Record<string, number>;
 }
 
 export type DisplayTrade = Trade & {
