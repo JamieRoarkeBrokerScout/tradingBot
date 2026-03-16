@@ -419,8 +419,12 @@ def open_trades_route():
         row = all_tokens.get(strategy)
         if not row or not row.get("oanda_access_token"):
             continue
+        account_type = row.get("oanda_account_type", "")
+        # Kraken Futures accounts are handled separately below — skip OANDA call
+        if account_type in ("kraken_futures", "kraken_futures_demo"):
+            continue
         try:
-            base = _oanda_base_url(row["oanda_account_type"])
+            base = _oanda_base_url(account_type)
             resp = _requests.get(
                 f"{base}/accounts/{row['oanda_account_id']}/openTrades",
                 headers=_oanda_headers(row["oanda_access_token"]),
@@ -434,20 +438,46 @@ def open_trades_route():
                     oanda_pl[strategy][inst] = (
                         oanda_pl[strategy].get(inst, 0.0) + float(ot.get("unrealizedPL", 0))
                     )
-                    # currentUnits is signed; price is the current market price stored by OANDA
                     if "price" in ot:
                         oanda_price[strategy][inst] = float(ot["price"])
         except Exception:
             pass
 
-    # Fall back to mid-price fetch for strategies where OANDA call failed
+    # Fetch current prices from Kraken Futures for crypto trades
+    kraken_prices: dict[str, float] = {}
+    crypto_row = all_tokens.get("crypto")
+    if crypto_row and crypto_row.get("oanda_access_token"):
+        kraken_account_type = crypto_row.get("oanda_account_type", "")
+        if kraken_account_type in ("kraken_futures", "kraken_futures_demo"):
+            try:
+                from strategies.brokers.kraken_futures import KrakenFuturesBroker
+                kf_broker = KrakenFuturesBroker(
+                    api_key=crypto_row["oanda_account_id"],
+                    api_secret=crypto_row["oanda_access_token"],
+                    use_demo=(kraken_account_type == "kraken_futures_demo"),
+                )
+                crypto_instruments = {t["instrument"] for t in trades if t["strategy"] == "crypto"}
+                for inst in crypto_instruments:
+                    try:
+                        _, _, mid = kf_broker.get_prices(inst)
+                        kraken_prices[inst] = mid
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    # Fall back to mid-price fetch for OANDA strategies where the OANDA call failed
     fallback_instruments = [
         t["instrument"] for t in trades
-        if t["strategy"] not in oanda_pl
+        if t["strategy"] not in oanda_pl and t["strategy"] != "crypto"
     ]
     prices: dict[str, float] = {}
     if fallback_instruments:
-        token_row = next((r for r in all_tokens.values() if r.get("oanda_access_token")), None)
+        token_row = next(
+            (r for r in all_tokens.values()
+             if r.get("oanda_access_token") and r.get("oanda_account_type", "") not in ("kraken_futures", "kraken_futures_demo")),
+            None
+        )
         if token_row:
             try:
                 prices = _fetch_oanda_prices(token_row, list(set(fallback_instruments)))
@@ -458,7 +488,16 @@ def open_trades_route():
         strategy   = t["strategy"]
         instrument = t["instrument"]
 
-        if strategy in oanda_pl and instrument in oanda_pl[strategy]:
+        if strategy == "crypto" and instrument in kraken_prices:
+            current = kraken_prices[instrument]
+            t["current_price"] = current
+            entry_price = float(t.get("entry_price", 0) or 0)
+            units       = float(t.get("units", 0) or 0)
+            if current > 0 and entry_price > 0 and units > 0:
+                t["unrealized_pl"] = (current - entry_price) * t["direction"] * units
+            else:
+                t["unrealized_pl"] = None
+        elif strategy in oanda_pl and instrument in oanda_pl[strategy]:
             # OANDA's accurate unrealized P&L (accounts for actual fill price + spread)
             t["unrealized_pl"]  = oanda_pl[strategy][instrument]
             t["current_price"]  = oanda_price[strategy].get(instrument) or prices.get(instrument)
@@ -477,8 +516,9 @@ def open_trades_route():
 @app.route("/api/open_trades/<string:trade_key>/close", methods=["POST"])
 @require_auth
 def close_open_trade(trade_key):
-    """Close a live position on OANDA and remove it from the open_trades table."""
+    """Close a live position and remove it from the open_trades table."""
     from database.database import delete_open_trade
+    from datetime import datetime, timezone
 
     trades = get_open_trades()
     trade = next((t for t in trades if t["trade_key"] == trade_key), None)
@@ -495,10 +535,46 @@ def close_open_trade(trade_key):
         all_tokens = get_all_user_tokens(g.user_id)
         row = next(iter(all_tokens.values()), None)
     if not row:
-        return jsonify({"error": "No OANDA credentials configured"}), 400
+        return jsonify({"error": "No credentials configured"}), 400
 
+    account_type = row.get("oanda_account_type", "")
+
+    # ── Kraken Futures path ────────────────────────────────────────────────────
+    if account_type in ("kraken_futures", "kraken_futures_demo"):
+        try:
+            from strategies.brokers.kraken_futures import KrakenFuturesBroker
+            broker = KrakenFuturesBroker(
+                api_key=row["oanda_account_id"],
+                api_secret=row["oanda_access_token"],
+                use_demo=(account_type == "kraken_futures_demo"),
+            )
+            units       = float(trade.get("units", 0) or 0)
+            entry_price = float(trade.get("entry_price", 0) or 0)
+            ok = broker.close_trade(instrument, units)
+            try:
+                _, _, exit_price = broker.get_prices(instrument)
+            except Exception:
+                exit_price = entry_price
+            raw_pl = (exit_price - entry_price) * direction * units if exit_price > 0 and entry_price > 0 else 0
+            try:
+                record_closed_trade(
+                    instrument=instrument, direction=direction, units=units,
+                    entry_price=entry_price, exit_price=exit_price,
+                    entry_time=trade.get("entry_time", ""),
+                    exit_time=datetime.now(timezone.utc).isoformat(),
+                    exit_reason="manual_close", raw_pl=raw_pl, strategy_name=strategy,
+                )
+            except Exception:
+                pass
+            delete_open_trade(trade_key)
+            status = "closed" if ok else "removed_stale"
+            return jsonify({"status": status, "trade_key": trade_key})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── OANDA path ─────────────────────────────────────────────────────────────
     try:
-        base = _oanda_base_url(row["oanda_account_type"])
+        base = _oanda_base_url(account_type)
         url = f"{base}/accounts/{row['oanda_account_id']}/positions/{instrument}/close"
         hdrs = _oanda_headers(row["oanda_access_token"])
 

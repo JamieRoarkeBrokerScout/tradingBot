@@ -153,15 +153,22 @@ class KrakenFuturesBroker:
 
     # ── Private endpoints ─────────────────────────────────────────────────────
 
-    def submit_market_order(self, instrument: str, signed_units: float) -> dict:
+    def submit_market_order(
+        self,
+        instrument: str,
+        signed_units: float,
+        tp_price: float | None = None,
+        stop_price: float | None = None,
+    ) -> dict:
         """
-        Place a market order.
+        Place a market order, then attach stop-loss and take-profit orders on the exchange.
         signed_units are in coin terms (e.g. BTC). Internally converted to
         USD contract size (each contract = $1).
         Returns {"filled": True} or {"filled": False, "error": ...}.
         """
         symbol = _INST.get(instrument, instrument)
         side   = "buy" if signed_units > 0 else "sell"
+        close_side = "sell" if signed_units > 0 else "buy"
 
         # Convert coin units → USD contract size using current mid price
         try:
@@ -191,27 +198,69 @@ class KrakenFuturesBroker:
         status      = send_status.get("status", "")
         log.info("[kraken_futures] order %s %s size=$%d status=%s id=%s",
                  side, symbol, size_usd, status, order_id)
+
+        # Place stop-loss order on the exchange for hard protection
+        if stop_price and stop_price > 0:
+            sl_data = {
+                "orderType": "stp",
+                "symbol":    symbol,
+                "side":      close_side,
+                "size":      str(int(size_usd)),
+                "stopPrice": str(round(stop_price, 2)),
+            }
+            try:
+                sl_result = self._private("POST", "/derivatives/api/v3/sendorder", sl_data)
+                if sl_result.get("result") == "success":
+                    sl_id = sl_result.get("sendStatus", {}).get("order_id", "")
+                    log.info("[kraken_futures] SL order placed at %.2f id=%s", stop_price, sl_id)
+                else:
+                    log.warning("[kraken_futures] SL order failed: %s", sl_result.get("error"))
+            except Exception as exc:
+                log.warning("[kraken_futures] SL order exception: %s", exc)
+
+        # Place take-profit limit order on the exchange
+        if tp_price and tp_price > 0:
+            tp_data = {
+                "orderType":  "lmt",
+                "symbol":     symbol,
+                "side":       close_side,
+                "size":       str(int(size_usd)),
+                "limitPrice": str(round(tp_price, 2)),
+            }
+            try:
+                tp_result = self._private("POST", "/derivatives/api/v3/sendorder", tp_data)
+                if tp_result.get("result") == "success":
+                    tp_id = tp_result.get("sendStatus", {}).get("order_id", "")
+                    log.info("[kraken_futures] TP order placed at %.2f id=%s", tp_price, tp_id)
+                else:
+                    log.warning("[kraken_futures] TP order failed: %s", tp_result.get("error"))
+            except Exception as exc:
+                log.warning("[kraken_futures] TP order exception: %s", exc)
+
         return {"filled": True, "order_id": order_id, "status": status}
 
     def close_trade(self, instrument: str, units: float) -> bool:
-        """Close an open position by submitting the opposite direction market order."""
+        """Cancel any open orders for this symbol, then close the position."""
         symbol    = _INST.get(instrument, instrument)
-        positions = self._get_open_positions()
 
-        holding = None
-        for pos in positions:
-            if pos.get("symbol") == symbol:
-                holding = pos
-                break
+        # Cancel all open orders for this symbol first (removes SL/TP bracket orders)
+        try:
+            self._private("POST", "/derivatives/api/v3/cancelallorders", {"symbol": symbol})
+        except Exception as exc:
+            log.warning("[kraken_futures] cancelallorders error for %s: %s", symbol, exc)
+
+        positions = self._get_open_positions()
+        holding = next((p for p in positions if p.get("symbol") == symbol), None)
 
         if holding is None:
-            log.warning("[kraken_futures] close_trade: no open position for %s", symbol)
-            return False
+            # Position already closed (e.g. SL/TP triggered on exchange)
+            log.info("[kraken_futures] close_trade: position for %s already closed", symbol)
+            return True
 
         side     = "sell" if holding["side"] == "long" else "buy"
         size_usd = int(float(holding.get("size", 0)))
         if size_usd < 1:
-            return False
+            return True
 
         data = {
             "orderType": "mkt",

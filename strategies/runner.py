@@ -109,7 +109,11 @@ def _submit(api, sig) -> bool:
                 ok = api.close_trade(sig.instrument, close_units)
                 return ok
             else:
-                result = api.submit_market_order(sig.instrument, signed_units)
+                result = api.submit_market_order(
+                    sig.instrument, signed_units,
+                    tp_price=sig.tp_price if sig.tp_price else None,
+                    stop_price=sig.stop_price if sig.stop_price else None,
+                )
                 if result.get("filled"):
                     log.info("[runner] Kraken order filled for %s", sig.instrument)
                     return True
@@ -128,9 +132,19 @@ def _submit(api, sig) -> bool:
     for attempt in range(config.OANDA_MAX_RETRIES):
         try:
             if action == "close":
-                resp = api.close_trade(sig.instrument, oanda_close)
-                log.info("[runner] close_trade response: %s", resp)
-                return True
+                try:
+                    resp = api.close_trade(sig.instrument, oanda_close)
+                    log.info("[runner] close_trade response: %s", resp)
+                    # tpqoa returns the raw v20 response body; check for error codes
+                    if isinstance(resp, dict) and resp.get("errorCode"):
+                        log.error("[runner] OANDA close failed for %s: %s",
+                                  sig.instrument, resp.get("errorMessage", resp))
+                        return False
+                    return True
+                except Exception as exc:
+                    log.error("[runner] OANDA close_trade raised for %s: %s",
+                              sig.instrument, exc)
+                    return False
             else:
                 # Bypass tpqoa's create_order (silently returns None on error).
                 # Call the underlying v20 context directly to get the full response.
