@@ -282,23 +282,58 @@ class KrakenFuturesBroker:
             return {"balance": 0.0, "nav": 0.0, "currency": "USD"}
 
         accounts = result.get("accounts", {})
+        log.info("[kraken_futures] accounts data: %s", accounts)
 
         # Prefer flex account (margin), fall back to cash
         flex     = accounts.get("flex", {})
         cash     = accounts.get("cash", {})
         cash_bal = 0.0
         try:
-            # cash.balances may be keyed by currency code in various cases
             balances = cash.get("balances", {})
             cash_bal = float(next(iter(balances.values()), 0) or 0)
         except Exception:
             pass
 
         portfolio_value = float(flex.get("portfolioValue", cash_bal) or cash_bal)
-        pnl             = float(flex.get("pnl", 0) or 0)
-        margin_reqs     = flex.get("marginRequirements", {})
-        margin_used     = float(margin_reqs.get("initialMargin", 0) or 0)
-        margin_avail    = float(flex.get("availableMargin", portfolio_value) or portfolio_value)
+
+        # pnl may be at top level or nested under auxiliary/marginEquity
+        aux = flex.get("auxiliary", {})
+        pnl = (
+            float(flex.get("pnl") or 0)
+            or float(aux.get("pnl") or 0)
+            or float(aux.get("unrealizedPnl") or 0)
+        )
+
+        # If pnl is still 0, calculate from open positions + current prices
+        if pnl == 0.0:
+            try:
+                positions = self._get_open_positions()
+                for pos in positions:
+                    symbol = pos.get("symbol", "")
+                    # reverse-map Kraken symbol → OANDA-style instrument
+                    inst = next((k for k, v in _INST.items() if v == symbol), None)
+                    if not inst:
+                        continue
+                    try:
+                        _, _, mid = self.get_prices(inst)
+                    except Exception:
+                        continue
+                    entry = float(pos.get("price", 0) or 0)
+                    size  = float(pos.get("size", 0) or 0)   # USD contracts
+                    side  = 1 if pos.get("side") == "long" else -1
+                    if entry > 0 and size > 0:
+                        # P&L in USD: size contracts × (mid - entry) / entry for perp
+                        pnl += side * size * (mid - entry) / entry
+            except Exception as exc:
+                log.warning("[kraken_futures] fallback pnl calc failed: %s", exc)
+
+        margin_reqs  = flex.get("marginRequirements", {})
+        margin_used  = (
+            float(margin_reqs.get("im", 0) or 0)
+            or float(margin_reqs.get("initialMargin", 0) or 0)
+            or float(flex.get("initialMargin", 0) or 0)
+        )
+        margin_avail = float(flex.get("availableMargin", portfolio_value) or portfolio_value)
 
         return {
             "balance":       portfolio_value,
