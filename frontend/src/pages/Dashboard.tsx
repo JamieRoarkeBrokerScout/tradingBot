@@ -51,45 +51,45 @@ type StrategyKey = typeof STRATEGY_META[number]['key'];
 
 const STRATEGY_COLORS: Record<string, { badge: string; toggle: string; glow: string }> = {
     violet: {
-        badge:  'bg-violet-100 text-violet-700 border-violet-200',
+        badge: 'bg-violet-100 text-violet-700 border-violet-200',
         toggle: 'bg-violet-600 hover:bg-violet-700',
-        glow:   'shadow-violet-100',
+        glow: 'shadow-violet-100',
     },
     blue: {
-        badge:  'bg-blue-100 text-blue-700 border-blue-200',
+        badge: 'bg-blue-100 text-blue-700 border-blue-200',
         toggle: 'bg-blue-600 hover:bg-blue-700',
-        glow:   'shadow-blue-100',
+        glow: 'shadow-blue-100',
     },
     amber: {
-        badge:  'bg-amber-100 text-amber-700 border-amber-200',
+        badge: 'bg-amber-100 text-amber-700 border-amber-200',
         toggle: 'bg-amber-500 hover:bg-amber-600',
-        glow:   'shadow-amber-100',
+        glow: 'shadow-amber-100',
     },
     emerald: {
-        badge:  'bg-emerald-100 text-emerald-700 border-emerald-200',
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
         toggle: 'bg-emerald-600 hover:bg-emerald-700',
-        glow:   'shadow-emerald-100',
+        glow: 'shadow-emerald-100',
     },
     rose: {
-        badge:  'bg-rose-100 text-rose-700 border-rose-200',
+        badge: 'bg-rose-100 text-rose-700 border-rose-200',
         toggle: 'bg-rose-600 hover:bg-rose-700',
-        glow:   'shadow-rose-100',
+        glow: 'shadow-rose-100',
     },
 };
 
 const PROFILES = [
-    { key: 'nas_a',  label: 'NASDAQ-100', instrument: 'NAS100_USD', color: 'blue'   },
-    { key: 'xau_a',  label: 'Gold',        instrument: 'XAU_USD',    color: 'amber'  },
-    { key: 'xag_a',  label: 'Silver',      instrument: 'XAG_USD',    color: 'slate'  },
-    { key: 'xcu_a',  label: 'Copper',      instrument: 'XCU_USD',    color: 'orange' },
+    { key: 'nas_a', label: 'NASDAQ-100', instrument: 'NAS100_USD', color: 'blue' },
+    { key: 'xau_a', label: 'Gold', instrument: 'XAU_USD', color: 'amber' },
+    { key: 'xag_a', label: 'Silver', instrument: 'XAG_USD', color: 'slate' },
+    { key: 'xcu_a', label: 'Copper', instrument: 'XCU_USD', color: 'orange' },
 ] as const;
 
 type ProfileKey = typeof PROFILES[number]['key'];
 
 const PROFILE_STYLES: Record<string, { active: string; idle: string }> = {
-    blue:   { active: 'bg-blue-600 text-white border-blue-600',   idle: 'bg-white text-blue-600 border-blue-200 hover:border-blue-400 hover:bg-blue-50' },
-    amber:  { active: 'bg-amber-500 text-white border-amber-500', idle: 'bg-white text-amber-600 border-amber-200 hover:border-amber-400 hover:bg-amber-50' },
-    slate:  { active: 'bg-slate-600 text-white border-slate-600', idle: 'bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50' },
+    blue: { active: 'bg-blue-600 text-white border-blue-600', idle: 'bg-white text-blue-600 border-blue-200 hover:border-blue-400 hover:bg-blue-50' },
+    amber: { active: 'bg-amber-500 text-white border-amber-500', idle: 'bg-white text-amber-600 border-amber-200 hover:border-amber-400 hover:bg-amber-50' },
+    slate: { active: 'bg-slate-600 text-white border-slate-600', idle: 'bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50' },
     orange: { active: 'bg-orange-500 text-white border-orange-500', idle: 'bg-white text-orange-600 border-orange-200 hover:border-orange-400 hover:bg-orange-50' },
 };
 
@@ -119,11 +119,11 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const [strategies, setStrategies] = useState<StrategiesResponse>({
         runner_running: false,
         strategies: {
-            stat_arb:      { enabled: false },
-            momentum:      { enabled: false },
-            vol_premium:   { enabled: false },
-            crypto:        { enabled: false },
-            daily_target:  { enabled: false },
+            stat_arb: { enabled: false },
+            momentum: { enabled: false },
+            vol_premium: { enabled: false },
+            crypto: { enabled: false },
+            daily_target: { enabled: false },
         },
     });
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);
@@ -134,10 +134,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const [environment, setEnvironment] = useState<string>('staging');
 
     const fetchStats = async () => {
-        try { const r = await apiFetch('/api/stats'); if (r.ok) setStats(await r.json()); } catch {}
+        try { const r = await apiFetch('/api/stats'); if (r.ok) setStats(await r.json()); } catch { }
     };
     const fetchTrades = async () => {
-        try { const r = await apiFetch('/api/trades'); if (r.ok) setTrades(await r.json()); } catch {}
+        try { const r = await apiFetch('/api/trades'); if (r.ok) setTrades(await r.json()); } catch { }
     };
     const checkHealth = async () => {
         try {
@@ -151,10 +151,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
         } catch { setBotRunning(false); }
     };
     const fetchOpenTrades = async () => {
-        try { const r = await apiFetch('/api/open_trades'); if (r.ok) setOpenTrades(await r.json()); } catch {}
+        try { const r = await apiFetch('/api/open_trades'); if (r.ok) setOpenTrades(await r.json()); } catch { }
     };
     const fetchAccount = async () => {
-        try { const r = await apiFetch('/api/account'); if (r.ok) setAccountData(await r.json()); } catch {}
+        try { const r = await apiFetch('/api/account'); if (r.ok) setAccountData(await r.json()); } catch { }
     };
     const closeTrade = async (tradeKey: string) => {
         setClosingTrade(tradeKey);
@@ -176,7 +176,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
         try {
             const r = await apiFetch('/api/strategies');
             if (r.ok) setStrategies(await r.json());
-        } catch {}
+        } catch { }
     };
     const toggleStrategy = async (key: StrategyKey) => {
         setTogglingStrategy(key);
@@ -288,11 +288,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         <button
                             onClick={killBot}
                             disabled={!botRunning}
-                            className={`px-5 py-2.5 rounded-lg font-black tracking-tighter transition-all flex items-center gap-2 text-sm ${
-                                !botRunning
+                            className={`px-5 py-2.5 rounded-lg font-black tracking-tighter transition-all flex items-center gap-2 text-sm ${!botRunning
                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                                     : 'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-200'
-                            }`}
+                                }`}
                         >
                             <AlertTriangle size={16} />
                             {isKillActive ? 'STOPPING...' : 'KILL SWITCH'}
@@ -320,13 +319,12 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                         key={p.key}
                                         onClick={() => !botRunning && setCurrentProfile(p.key)}
                                         disabled={botRunning && !isSelected}
-                                        className={`px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                                            isSelected
+                                        className={`px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all ${isSelected
                                                 ? styles.active
                                                 : botRunning
                                                     ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
                                                     : styles.idle
-                                        }`}
+                                            }`}
                                     >
                                         <span className="block text-xs font-black tracking-wider">{p.label}</span>
                                         <span className="block text-[10px] font-mono opacity-70 mt-0.5">{p.instrument}</span>
@@ -340,7 +338,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                     </section>
 
                     {/* Bot card */}
-                    <section>
+                    {/* <section>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
                             <BarChart3 size={12} /> Active Strategy
                         </p>
@@ -392,7 +390,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                 </div>
                             </div>
                         </div>
-                    </section>
+                    </section> */}
 
                     {/* Strategy Engine */}
                     <section>
@@ -412,26 +410,24 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         )}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {STRATEGY_META.map(s => {
-                                const isEnabled  = strategies.strategies[s.key]?.enabled ?? false;
+                                const isEnabled = strategies.strategies[s.key]?.enabled ?? false;
                                 const isToggling = togglingStrategy === s.key;
-                                const colors     = STRATEGY_COLORS[s.color];
+                                const colors = STRATEGY_COLORS[s.color];
                                 return (
                                     <div
                                         key={s.key}
-                                        className={`bg-white border rounded-2xl p-4 shadow-sm flex flex-col gap-3 transition-all ${
-                                            isEnabled ? `border-slate-200 shadow-md ${colors.glow}` : 'border-slate-200'
-                                        }`}
+                                        className={`bg-white border rounded-2xl p-4 shadow-sm flex flex-col gap-3 transition-all ${isEnabled ? `border-slate-200 shadow-md ${colors.glow}` : 'border-slate-200'
+                                            }`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div>
                                                 <p className="text-sm font-black text-slate-900">{s.label}</p>
                                                 <p className="text-[10px] font-mono text-slate-400">{s.subtitle}</p>
                                             </div>
-                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                                                isEnabled
+                                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${isEnabled
                                                     ? colors.badge
                                                     : 'bg-slate-100 text-slate-400 border-slate-200'
-                                            }`}>
+                                                }`}>
                                                 {isEnabled ? '● ON' : '○ OFF'}
                                             </span>
                                         </div>
@@ -443,13 +439,12 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                         <button
                                             onClick={() => toggleStrategy(s.key)}
                                             disabled={isToggling}
-                                            className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${
-                                                isToggling
+                                            className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${isToggling
                                                     ? 'bg-slate-100 text-slate-400 cursor-wait'
                                                     : isEnabled
                                                         ? 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
                                                         : `${colors.toggle} text-white shadow-sm`
-                                            }`}
+                                                }`}
                                         >
                                             {isToggling ? 'Updating...' : isEnabled ? 'Disable' : 'Enable'}
                                         </button>
@@ -513,11 +508,11 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                 {openTrades.length} open
                             </span>
                         </p>
-                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
                             {openTrades.length === 0 ? (
                                 <p className="text-slate-400 text-center py-6 text-sm">No open positions</p>
                             ) : (
-                                <table className="w-full text-xs">
+                                <table className="w-full text-xs min-w-[900px]">
                                     <thead>
                                         <tr className="border-b border-slate-100 bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                                             <th className="text-left px-4 py-2.5">Instrument</th>
@@ -545,11 +540,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                     <td className="px-4 py-2.5 font-mono font-bold text-slate-800">{t.instrument}</td>
                                                     <td className="px-4 py-2.5 text-slate-500">{t.strategy}</td>
                                                     <td className="px-4 py-2.5">
-                                                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
-                                                            t.direction > 0
+                                                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${t.direction > 0
                                                                 ? 'bg-emerald-100 text-emerald-700'
                                                                 : 'bg-rose-100 text-rose-600'
-                                                        }`}>
+                                                            }`}>
                                                             {t.direction > 0 ? 'LONG' : 'SHORT'}
                                                         </span>
                                                     </td>
@@ -569,9 +563,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                     <td className="px-4 py-2.5 text-right font-mono text-slate-700">
                                                         {t.current_price != null ? fmt(t.current_price) : '—'}
                                                     </td>
-                                                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${
-                                                        pl == null ? 'text-slate-400' : pl >= 0 ? 'text-emerald-600' : 'text-rose-500'
-                                                    }`}>
+                                                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${pl == null ? 'text-slate-400' : pl >= 0 ? 'text-emerald-600' : 'text-rose-500'
+                                                        }`}>
                                                         {pl == null ? '—' : `${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}`}
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right text-slate-400 font-mono">
@@ -581,11 +574,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                         <button
                                                             onClick={() => closeTrade(t.trade_key)}
                                                             disabled={isClosing}
-                                                            className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                                                isClosing
+                                                            className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${isClosing
                                                                     ? 'bg-slate-100 text-slate-400 cursor-wait'
                                                                     : 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {isClosing ? '...' : 'Close'}
                                                         </button>
@@ -648,11 +640,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                             </div>
                             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Profit Factor</p>
-                                <p className={`text-2xl font-mono font-bold ${
-                                    at.profit_factor == null ? 'text-slate-400' :
-                                    at.profit_factor >= 1.5 ? 'text-emerald-600' :
-                                    at.profit_factor >= 1.0 ? 'text-amber-500' : 'text-rose-500'
-                                }`}>
+                                <p className={`text-2xl font-mono font-bold ${at.profit_factor == null ? 'text-slate-400' :
+                                        at.profit_factor >= 1.5 ? 'text-emerald-600' :
+                                            at.profit_factor >= 1.0 ? 'text-amber-500' : 'text-rose-500'
+                                    }`}>
                                     {at.profit_factor != null ? at.profit_factor.toFixed(2) : '—'}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-mono mt-0.5">gross profit / loss</p>
@@ -712,11 +703,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                     <div className="flex justify-between mb-1.5">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600">{trade.stock}</span>
-                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full ${
-                                                trade.profit >= 0
+                                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full ${trade.profit >= 0
                                                     ? 'bg-emerald-100 text-emerald-700'
                                                     : 'bg-rose-100 text-rose-600'
-                                            }`}>
+                                                }`}>
                                                 {trade.profit >= 0 ? 'WIN' : 'LOSS'}
                                             </span>
                                         </div>
