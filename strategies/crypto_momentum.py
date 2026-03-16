@@ -222,8 +222,8 @@ class CryptoMomentumStrategy(SafeguardsBase):
             tp        = last_close + direction * config.CRYPTO_TP_ATR_MULT   * last_atr
             stop_dist = abs(last_close - stop)
 
-            # Size by risk: risk (NAV × 2%) / stop distance
-            units = (nav * config.CRYPTO_NAV_PCT) / stop_dist if stop_dist > 0 else 0
+            # Size by risk then apply leverage: (NAV × 2% × leverage) / stop distance
+            units = (nav * config.CRYPTO_NAV_PCT * config.CRYPTO_LEVERAGE) / stop_dist if stop_dist > 0 else 0
             if units <= 0:
                 continue
 

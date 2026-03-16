@@ -79,7 +79,8 @@ CRYPTO_MA_PERIOD       = 50          # shorter MA — crypto trends faster
 CRYPTO_RSI_LONG        = 60          # RSI above this → bullish
 CRYPTO_RSI_SHORT       = 40          # RSI below this → bearish
 CRYPTO_RSI_EXIT        = 50          # exit when RSI crosses back through midline
-CRYPTO_NAV_PCT         = 0.02        # 2% NAV per trade — smaller due to high volatility
+CRYPTO_NAV_PCT         = 0.02        # 2% NAV per trade — base risk before leverage
+CRYPTO_LEVERAGE        = 5           # leverage multiplier on Kraken Futures (5× = $100 position per $20 risk)
 CRYPTO_STOP_ATR_MULT   = 2.5
 CRYPTO_TP_ATR_MULT     = 4.0
 CRYPTO_TRAIL_TRIGGER   = 1.0         # ATR profit before trailing activates

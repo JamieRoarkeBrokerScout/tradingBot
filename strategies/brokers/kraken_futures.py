@@ -200,6 +200,12 @@ class KrakenFuturesBroker:
         log.info("[kraken_futures] order %s %s size=$%d status=%s id=%s",
                  side, symbol, size_usd, status, order_id)
 
+        # Only treat "placed" or "filled" as a successful fill
+        _FILLED = {"placed", "filled", "partiallyFilled"}
+        if status not in _FILLED:
+            log.error("[kraken_futures] order not filled %s %s: status=%s", side, symbol, status)
+            return {"filled": False, "error": f"order status: {status}"}
+
         # Place stop-loss order on the exchange for hard protection
         if stop_price and stop_price > 0:
             sl_data = {

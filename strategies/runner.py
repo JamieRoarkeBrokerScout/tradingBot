@@ -307,7 +307,7 @@ class Runner:
                     self._enabled[name] = state.get(name, {}).get("enabled", False)
                 last_state_reload = now
 
-            # Refresh account NAV
+            # Refresh account NAV from default (OANDA) API for position sizing
             if now - last_nav_update >= NAV_INTERVAL:
                 if self._default_api:
                     nav = _get_nav(self._default_api)
