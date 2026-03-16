@@ -12,11 +12,24 @@ export interface Trade {
     entry_units?: number;
 }
 
+export interface AlltimeStats {
+    total_trades: number;
+    total_pl: number;
+    total_wins: number;
+    total_losses: number;
+    win_rate: number;
+    avg_win: number;
+    avg_loss: number;
+    profit_factor: number | null;
+}
+
 export interface Stats {
     daily_pnl: number;
     trades_today: number;
     wins: number;
     losses: number;
+    alltime?: AlltimeStats;
+    by_strategy?: Record<string, { trades: number; pl: number; wins: number; losses: number }>;
 }
 
 export type DisplayTrade = Trade & {

@@ -7,7 +7,7 @@ import { logout, type AuthSession } from '../auth';
 import { apiFetch } from '../api';
 import TokenSettings from '../components/TokenSettings';
 import TradeModal from '../components/TradeModal';
-import type { Trade, Stats, DisplayTrade, StrategiesResponse, OpenTrade, AccountData } from '../types';
+import type { Trade, Stats, DisplayTrade, StrategiesResponse, OpenTrade, AccountData, AlltimeStats } from '../types';
 
 const STRATEGY_META = [
     {
@@ -216,7 +216,11 @@ export default function Dashboard({ session }: { session: AuthSession }) {
     const totalPL = stats.daily_pnl;
     const winRate = stats.trades_today > 0
         ? Math.round((stats.wins / stats.trades_today) * 100) : 0;
-    const pastTrades = trades.slice(0, 10).map(toDisplayTrade);
+    const at: AlltimeStats = stats.alltime ?? {
+        total_trades: 0, total_pl: 0, total_wins: 0, total_losses: 0,
+        win_rate: 0, avg_win: 0, avg_loss: 0, profit_factor: null,
+    };
+    const pastTrades = trades.map(toDisplayTrade);
     const activeProfile = PROFILES.find(p => p.key === currentProfile) ?? PROFILES[0];
 
     return (
@@ -566,24 +570,97 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         </div>
                     </section>
 
-                    {/* Stats row */}
+                    {/* Stats row — today */}
                     <section className="grid grid-cols-4 gap-4">
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                             <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Open Positions</p>
                             <p className={`text-3xl font-mono font-bold ${openTrades.length > 0 ? 'text-blue-600' : 'text-slate-900'}`}>{openTrades.length}</p>
                         </div>
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Trades Today</p>
-                            <p className="text-3xl font-mono font-bold text-slate-900">{stats.trades_today}</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Today's P/L</p>
+                            <p className={`text-3xl font-mono font-bold ${stats.daily_pnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                {stats.daily_pnl >= 0 ? '+' : ''}${stats.daily_pnl.toFixed(2)}
+                            </p>
                         </div>
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Wins / Losses</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Today W / L</p>
                             <p className="text-3xl font-mono font-bold text-blue-600">{stats.wins} / {stats.losses}</p>
                         </div>
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Success Rate</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-2">Today Win Rate</p>
                             <p className="text-3xl font-mono font-bold text-emerald-600">{winRate}%</p>
                         </div>
+                    </section>
+
+                    {/* All-time performance */}
+                    <section>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                            <BarChart3 size={12} /> All-Time Performance
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Total P/L</p>
+                                <p className={`text-2xl font-mono font-bold ${at.total_pl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {at.total_pl >= 0 ? '+' : ''}${at.total_pl.toFixed(2)}
+                                </p>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Win Rate</p>
+                                <p className="text-2xl font-mono font-bold text-slate-800">{at.win_rate}%</p>
+                                <p className="text-[10px] text-slate-400 font-mono mt-0.5">{at.total_wins}W / {at.total_losses}L of {at.total_trades}</p>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Avg Win / Loss</p>
+                                <p className="text-2xl font-mono font-bold text-slate-800">
+                                    <span className="text-emerald-600">${at.avg_win.toFixed(2)}</span>
+                                    <span className="text-slate-300 text-lg"> / </span>
+                                    <span className="text-rose-500">${Math.abs(at.avg_loss).toFixed(2)}</span>
+                                </p>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Profit Factor</p>
+                                <p className={`text-2xl font-mono font-bold ${
+                                    at.profit_factor == null ? 'text-slate-400' :
+                                    at.profit_factor >= 1.5 ? 'text-emerald-600' :
+                                    at.profit_factor >= 1.0 ? 'text-amber-500' : 'text-rose-500'
+                                }`}>
+                                    {at.profit_factor != null ? at.profit_factor.toFixed(2) : '—'}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono mt-0.5">gross profit / loss</p>
+                            </div>
+                        </div>
+                        {/* By strategy */}
+                        {stats.by_strategy && Object.keys(stats.by_strategy).length > 0 && (
+                            <div className="mt-3 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="border-b border-slate-100 bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                            <th className="text-left px-4 py-2">Strategy</th>
+                                            <th className="text-right px-4 py-2">Trades</th>
+                                            <th className="text-right px-4 py-2">W / L</th>
+                                            <th className="text-right px-4 py-2">Win %</th>
+                                            <th className="text-right px-4 py-2">Total P/L</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.entries(stats.by_strategy).map(([name, s]) => {
+                                            const wr = s.trades > 0 ? Math.round(s.wins / s.trades * 100) : 0;
+                                            return (
+                                                <tr key={name} className="border-b border-slate-50 last:border-0">
+                                                    <td className="px-4 py-2 font-bold text-slate-700 capitalize">{name.replace('_', ' ')}</td>
+                                                    <td className="px-4 py-2 text-right font-mono text-slate-600">{s.trades}</td>
+                                                    <td className="px-4 py-2 text-right font-mono text-slate-600">{s.wins} / {s.losses}</td>
+                                                    <td className="px-4 py-2 text-right font-mono font-bold text-slate-700">{wr}%</td>
+                                                    <td className={`px-4 py-2 text-right font-mono font-bold ${s.pl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                                        {s.pl >= 0 ? '+' : ''}${s.pl.toFixed(2)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </section>
                 </div>
 

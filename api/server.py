@@ -741,9 +741,42 @@ def get_stats():
         FROM trades
         WHERE DATE(exit_time) = DATE('now')
     """)
-    stats = dict(cursor.fetchone())
+    today = dict(cursor.fetchone())
+
+    cursor.execute("""
+        SELECT
+            COUNT(*) as total_trades,
+            COALESCE(SUM(raw_pl), 0) as total_pl,
+            COALESCE(SUM(CASE WHEN raw_pl > 0 THEN raw_pl ELSE 0 END), 0) as gross_profit,
+            COALESCE(SUM(CASE WHEN raw_pl < 0 THEN raw_pl ELSE 0 END), 0) as gross_loss,
+            SUM(CASE WHEN raw_pl > 0 THEN 1 ELSE 0 END) as total_wins,
+            SUM(CASE WHEN raw_pl < 0 THEN 1 ELSE 0 END) as total_losses,
+            COALESCE(AVG(CASE WHEN raw_pl > 0 THEN raw_pl END), 0) as avg_win,
+            COALESCE(AVG(CASE WHEN raw_pl < 0 THEN raw_pl END), 0) as avg_loss
+        FROM trades
+    """)
+    alltime = dict(cursor.fetchone())
+
+    cursor.execute("""
+        SELECT strategy_name,
+            COUNT(*) as trades,
+            COALESCE(SUM(raw_pl), 0) as pl,
+            SUM(CASE WHEN raw_pl > 0 THEN 1 ELSE 0 END) as wins,
+            SUM(CASE WHEN raw_pl < 0 THEN 1 ELSE 0 END) as losses
+        FROM trades
+        WHERE strategy_name IS NOT NULL
+        GROUP BY strategy_name
+    """)
+    by_strategy = {row["strategy_name"]: dict(row) for row in cursor.fetchall()}
+
     conn.close()
-    return jsonify(stats)
+    n = alltime["total_trades"] or 0
+    w = alltime["total_wins"] or 0
+    alltime["win_rate"] = round(w / n * 100, 1) if n > 0 else 0.0
+    gl = abs(alltime["gross_loss"])
+    alltime["profit_factor"] = round(alltime["gross_profit"] / gl, 2) if gl > 0 else None
+
+    return jsonify({**today, "alltime": alltime, "by_strategy": by_strategy})
 
 
 # ---------------------------------------------------------------------------

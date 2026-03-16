@@ -374,6 +374,12 @@ class Runner:
                                     log.exception("[runner] failed to delete open trade %s", trade_key)
                                 if entry:
                                     exit_price = prices.get(sig.instrument, 0.0)
+                                    # Kraken prices won't be in the OANDA prices dict — fetch directly
+                                    if exit_price == 0.0 and isinstance(api, KrakenFuturesBroker):
+                                        try:
+                                            _, _, exit_price = api.get_prices(sig.instrument)
+                                        except Exception:
+                                            pass
                                     _record_trade(
                                         instrument=entry["instrument"],
                                         direction=entry["direction"],
