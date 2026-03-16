@@ -289,8 +289,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                             onClick={killBot}
                             disabled={!botRunning}
                             className={`px-5 py-2.5 rounded-lg font-black tracking-tighter transition-all flex items-center gap-2 text-sm ${!botRunning
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                    : 'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-200'
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                : 'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-200'
                                 }`}
                         >
                             <AlertTriangle size={16} />
@@ -306,7 +306,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                 <div className="lg:col-span-8 space-y-6">
 
                     {/* Instrument selector */}
-                    <section>
+                    {/* <section>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
                             <TrendingUp size={12} /> Select Instrument
                         </p>
@@ -335,7 +335,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                         {botRunning && (
                             <p className="text-xs text-slate-400 mt-2">Stop the bot to switch instruments.</p>
                         )}
-                    </section>
+                    </section> */}
 
                     {/* Bot card */}
                     {/* <section>
@@ -425,8 +425,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                 <p className="text-[10px] font-mono text-slate-400">{s.subtitle}</p>
                                             </div>
                                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${isEnabled
-                                                    ? colors.badge
-                                                    : 'bg-slate-100 text-slate-400 border-slate-200'
+                                                ? colors.badge
+                                                : 'bg-slate-100 text-slate-400 border-slate-200'
                                                 }`}>
                                                 {isEnabled ? '● ON' : '○ OFF'}
                                             </span>
@@ -440,10 +440,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                             onClick={() => toggleStrategy(s.key)}
                                             disabled={isToggling}
                                             className={`w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all ${isToggling
-                                                    ? 'bg-slate-100 text-slate-400 cursor-wait'
-                                                    : isEnabled
-                                                        ? 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
-                                                        : `${colors.toggle} text-white shadow-sm`
+                                                ? 'bg-slate-100 text-slate-400 cursor-wait'
+                                                : isEnabled
+                                                    ? 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
+                                                    : `${colors.toggle} text-white shadow-sm`
                                                 }`}
                                         >
                                             {isToggling ? 'Updating...' : isEnabled ? 'Disable' : 'Enable'}
@@ -541,8 +541,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                     <td className="px-4 py-2.5 text-slate-500">{t.strategy}</td>
                                                     <td className="px-4 py-2.5">
                                                         <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${t.direction > 0
-                                                                ? 'bg-emerald-100 text-emerald-700'
-                                                                : 'bg-rose-100 text-rose-600'
+                                                            ? 'bg-emerald-100 text-emerald-700'
+                                                            : 'bg-rose-100 text-rose-600'
                                                             }`}>
                                                             {t.direction > 0 ? 'LONG' : 'SHORT'}
                                                         </span>
@@ -575,8 +575,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                             onClick={() => closeTrade(t.trade_key)}
                                                             disabled={isClosing}
                                                             className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${isClosing
-                                                                    ? 'bg-slate-100 text-slate-400 cursor-wait'
-                                                                    : 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
+                                                                ? 'bg-slate-100 text-slate-400 cursor-wait'
+                                                                : 'bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white border border-rose-200'
                                                                 }`}
                                                         >
                                                             {isClosing ? '...' : 'Close'}
@@ -641,8 +641,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter mb-1">Profit Factor</p>
                                 <p className={`text-2xl font-mono font-bold ${at.profit_factor == null ? 'text-slate-400' :
-                                        at.profit_factor >= 1.5 ? 'text-emerald-600' :
-                                            at.profit_factor >= 1.0 ? 'text-amber-500' : 'text-rose-500'
+                                    at.profit_factor >= 1.5 ? 'text-emerald-600' :
+                                        at.profit_factor >= 1.0 ? 'text-amber-500' : 'text-rose-500'
                                     }`}>
                                     {at.profit_factor != null ? at.profit_factor.toFixed(2) : '—'}
                                 </p>
@@ -704,8 +704,8 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600">{trade.stock}</span>
                                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full ${trade.profit >= 0
-                                                    ? 'bg-emerald-100 text-emerald-700'
-                                                    : 'bg-rose-100 text-rose-600'
+                                                ? 'bg-emerald-100 text-emerald-700'
+                                                : 'bg-rose-100 text-rose-600'
                                                 }`}>
                                                 {trade.profit >= 0 ? 'WIN' : 'LOSS'}
                                             </span>

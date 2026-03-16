@@ -182,6 +182,17 @@ class KrakenFuturesBroker:
         if size_usd < min_usd:
             return {"filled": False, "error": f"size ${size_usd} below minimum ${min_usd}"}
 
+        # Log available margin before attempting order to aid diagnosis
+        try:
+            acct = self._private("GET", "/derivatives/api/v3/accounts")
+            flex = acct.get("accounts", {}).get("flex", {})
+            avail = flex.get("availableMargin", "?")
+            pv    = flex.get("portfolioValue", "?")
+            log.info("[kraken_futures] pre-order check: portfolioValue=%s availableMargin=%s orderSize=$%d",
+                     pv, avail, size_usd)
+        except Exception:
+            pass
+
         data = {
             "orderType": "mkt",
             "symbol":    symbol,
