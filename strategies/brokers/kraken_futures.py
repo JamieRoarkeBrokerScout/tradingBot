@@ -53,15 +53,19 @@ _GRAN: dict[str, str] = {
     "H1": "1h", "H4": "4h", "D": "1d", "W": "1w",
 }
 
-# Minimum order size in coin (base currency) per instrument
-_MIN_COINS: dict[str, float] = {
-    "PF_XBTUSD": 0.001,
-    "PF_ETHUSD": 0.01,
-    "PF_SOLUSD": 0.1,
-    "PF_LTCUSD": 0.1,
-    "PF_XRPUSD": 10.0,
-    "PF_BCHUSD": 0.01,
+# Decimal precision for order size (contractValueTradePrecision from /instruments API)
+# Size must be rounded to this many decimal places; min = 1 / 10^precision
+_PRECISION: dict[str, int] = {
+    "PF_XBTUSD": 4,
+    "PF_ETHUSD": 3,
+    "PF_SOLUSD": 2,
+    "PF_LTCUSD": 2,
+    "PF_XRPUSD": 0,
+    "PF_BCHUSD": 2,
 }
+
+# Minimum order size in coin (base currency) = 1 / 10^precision
+_MIN_COINS: dict[str, float] = {sym: 10 ** -p for sym, p in _PRECISION.items()}
 
 
 class KrakenFuturesBroker:
@@ -172,9 +176,10 @@ class KrakenFuturesBroker:
         side   = "buy" if signed_units > 0 else "sell"
         close_side = "sell" if signed_units > 0 else "buy"
 
-        # PF_* perpetuals are coin-denominated — send coin amount directly
-        size_coins = abs(signed_units)
-        min_coins  = _MIN_COINS.get(symbol, 0.001)
+        # PF_* perpetuals are coin-denominated — round to exchange-specified decimal precision
+        precision  = _PRECISION.get(symbol, 4)
+        size_coins = round(abs(signed_units), precision)
+        min_coins  = _MIN_COINS.get(symbol, 10 ** -precision)
         if size_coins < min_coins:
             return {"filled": False, "error": f"size {size_coins} below minimum {min_coins} coins"}
 
@@ -195,11 +200,12 @@ class KrakenFuturesBroker:
         except Exception:
             pass
 
+        size_str = f"{size_coins:.{precision}f}"
         data = {
             "orderType": "mkt",
             "symbol":    symbol,
             "side":      side,
-            "size":      f"{size_coins:.6f}",
+            "size":      size_str,
         }
         result = self._private("POST", "/derivatives/api/v3/sendorder", data)
         if result.get("result") != "success":
@@ -225,7 +231,7 @@ class KrakenFuturesBroker:
                 "orderType": "stp",
                 "symbol":    symbol,
                 "side":      close_side,
-                "size":      f"{size_coins:.6f}",
+                "size":      size_str,
                 "stopPrice": str(round(stop_price, 6)),
             }
             try:
@@ -244,7 +250,7 @@ class KrakenFuturesBroker:
                 "orderType":  "lmt",
                 "symbol":     symbol,
                 "side":       close_side,
-                "size":       f"{size_coins:.6f}",
+                "size":       size_str,
                 "limitPrice": str(round(tp_price, 6)),
             }
             try:
@@ -282,11 +288,12 @@ class KrakenFuturesBroker:
         if size_coins <= 0:
             return True
 
+        precision = _PRECISION.get(symbol, 4)
         data = {
             "orderType": "mkt",
             "symbol":    symbol,
             "side":      side,
-            "size":      f"{size_coins:.6f}",
+            "size":      f"{size_coins:.{precision}f}",
         }
         result = self._private("POST", "/derivatives/api/v3/sendorder", data)
         if result.get("result") != "success":
