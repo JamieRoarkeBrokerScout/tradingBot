@@ -53,6 +53,8 @@ export interface OpenTrade {
     entry_time: string;
     current_price?: number | null;
     unrealized_pl?: number | null;
+    stop_price?: number | null;
+    tp_price?: number | null;
 }
 
 export interface AccountInfo {
@@ -77,9 +79,10 @@ export interface StrategyState {
 export interface StrategiesResponse {
     runner_running: boolean;
     strategies: {
-        stat_arb:    StrategyState;
-        momentum:    StrategyState;
-        vol_premium: StrategyState;
-        crypto:      StrategyState;
+        stat_arb:      StrategyState;
+        momentum:      StrategyState;
+        vol_premium:   StrategyState;
+        crypto:        StrategyState;
+        daily_target:  StrategyState;
     };
 }

@@ -74,10 +74,29 @@ def _vol_premium_bucket(features: dict) -> str:
     return f"ratio_{ratio_band}_vix_{vix_band}"
 
 
+def _crypto_bucket(features: dict) -> str:
+    rsi       = float(features.get("rsi", 50.0))
+    atr_pct   = float(features.get("atr_pct", 0.0))
+    direction = int(features.get("direction", 0))
+
+    rsi_band = int(rsi // 10) * 10          # 0, 10, 20, … 90
+
+    if atr_pct < 0.010:
+        atr_tier = "low"
+    elif atr_pct < 0.025:
+        atr_tier = "mid"
+    else:
+        atr_tier = "high"
+
+    dir_str = "long" if direction > 0 else "short"
+    return f"rsi{rsi_band}_{atr_tier}_{dir_str}"
+
+
 _BUCKET_FNS = {
     "momentum":    _momentum_bucket,
     "stat_arb":    _stat_arb_bucket,
     "vol_premium": _vol_premium_bucket,
+    "crypto":      _crypto_bucket,
 }
 
 

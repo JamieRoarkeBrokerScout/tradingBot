@@ -510,8 +510,9 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                             <th className="text-left px-4 py-2.5">Instrument</th>
                                             <th className="text-left px-4 py-2.5">Strategy</th>
                                             <th className="text-left px-4 py-2.5">Side</th>
-                                            <th className="text-right px-4 py-2.5">Units</th>
+                                            <th className="text-right px-4 py-2.5">Leverage</th>
                                             <th className="text-right px-4 py-2.5">Entry</th>
+                                            <th className="text-right px-4 py-2.5">SL / TP</th>
                                             <th className="text-right px-4 py-2.5">Current</th>
                                             <th className="text-right px-4 py-2.5">P&L</th>
                                             <th className="text-right px-4 py-2.5">Opened</th>
@@ -522,6 +523,10 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                         {openTrades.map(t => {
                                             const pl = t.unrealized_pl;
                                             const isClosing = closingTrade === t.trade_key;
+                                            const nav = accountData[t.strategy]?.nav || accountData[t.strategy]?.balance || 0;
+                                            const notional = t.entry_price * t.units;
+                                            const leverage = nav > 0 ? notional / nav : null;
+                                            const fmt = (p: number) => p >= 100 ? p.toFixed(2) : p >= 1 ? p.toFixed(4) : p.toFixed(6);
                                             return (
                                                 <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
                                                     <td className="px-4 py-2.5 font-mono font-bold text-slate-800">{t.instrument}</td>
@@ -535,10 +540,21 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                                             {t.direction > 0 ? 'LONG' : 'SHORT'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">{t.units.toFixed(0)}</td>
-                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-500">{t.entry_price.toFixed(2)}</td>
                                                     <td className="px-4 py-2.5 text-right font-mono text-slate-700">
-                                                        {t.current_price != null ? t.current_price.toFixed(2) : '—'}
+                                                        {leverage != null ? `${leverage.toFixed(1)}×` : '—'}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-500">{fmt(t.entry_price)}</td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-[10px]">
+                                                        {t.stop_price != null
+                                                            ? <span className="text-rose-500">{fmt(t.stop_price)}</span>
+                                                            : <span className="text-slate-300">—</span>}
+                                                        <span className="text-slate-300 mx-1">/</span>
+                                                        {t.tp_price != null
+                                                            ? <span className="text-emerald-600">{fmt(t.tp_price)}</span>
+                                                            : <span className="text-slate-300">—</span>}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right font-mono text-slate-700">
+                                                        {t.current_price != null ? fmt(t.current_price) : '—'}
                                                     </td>
                                                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${
                                                         pl == null ? 'text-slate-400' : pl >= 0 ? 'text-emerald-600' : 'text-rose-500'

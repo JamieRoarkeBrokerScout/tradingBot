@@ -41,6 +41,7 @@ _DEMO_BASE = "https://demo-futures.kraken.com"
 _INST: dict[str, str] = {
     "BTC_USD": "PF_XBTUSD",
     "ETH_USD": "PF_ETHUSD",
+    "SOL_USD": "PF_SOLUSD",
     "LTC_USD": "PF_LTCUSD",
     "XRP_USD": "PF_XRPUSD",
     "BCH_USD": "PF_BCHUSD",

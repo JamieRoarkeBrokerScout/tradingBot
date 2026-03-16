@@ -35,10 +35,11 @@ STRATEGY_STATE_FILE  = _project_root / "strategy_state.json"
 STRATEGY_RUNNER      = _project_root / "strategies" / "runner.py"
 
 _DEFAULT_STRATEGY_STATE = {
-    "stat_arb":    {"enabled": False},
-    "momentum":    {"enabled": False},
-    "vol_premium": {"enabled": False},
-    "crypto":      {"enabled": False},
+    "stat_arb":      {"enabled": False},
+    "momentum":      {"enabled": False},
+    "vol_premium":   {"enabled": False},
+    "crypto":        {"enabled": False},
+    "daily_target":  {"enabled": False},
 }
 
 # Global strategy runner process

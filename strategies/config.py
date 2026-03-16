@@ -16,6 +16,7 @@ HALT_FRIDAY_CUTOFF_UTC   = 20         # no new opens on Friday at/after this hou
 STAT_ARB_PAIRS = [
     ("XAU_USD", "XAG_USD"),
     ("EUR_USD", "GBP_USD"),
+    ("NAS100_USD", "SPX500_USD"),
 ]
 STAT_ARB_LOOKBACK_DAYS   = 60
 STAT_ARB_POLL_SECONDS    = 300        # 5 minutes
@@ -29,7 +30,7 @@ STAT_ARB_MIN_CORRELATION = 0.40
 STAT_ARB_MIN_SPREAD_STD  = 0.003
 
 # ─── Momentum ─────────────────────────────────────────────────────────────────
-MOMENTUM_INSTRUMENTS     = ["SPX500_USD", "XAU_USD"]
+MOMENTUM_INSTRUMENTS     = ["SPX500_USD", "XAU_USD", "NAS100_USD"]
 MOMENTUM_POLL_SECONDS    = 300        # 5 minutes
 MOMENTUM_CANDLES         = 50
 MOMENTUM_GRANULARITY     = "H1"
@@ -68,7 +69,7 @@ VOL_MAX_AGE_DAYS         = 5
 VOL_CLOSE_RATIO          = 1.0        # exit when iv_rv drops below this
 
 # ─── Crypto Momentum ──────────────────────────────────────────────────────────
-CRYPTO_INSTRUMENTS     = ["BTC_USD", "ETH_USD"]
+CRYPTO_INSTRUMENTS     = ["BTC_USD", "ETH_USD", "SOL_USD"]
 CRYPTO_POLL_SECONDS    = 300         # 5 minutes
 CRYPTO_CANDLES         = 100         # bars to fetch
 CRYPTO_GRANULARITY     = "H1"
@@ -87,6 +88,25 @@ CRYPTO_MIN_ATR_PCT     = 0.005       # 0.5% minimum ATR (crypto is always volati
 CRYPTO_MAX_OPEN        = 2           # max 1 per instrument, 2 total
 CRYPTO_MIN_GAP_HOURS   = 2
 CRYPTO_MAX_AGE_DAYS    = 7
+
+# ─── Daily Target ─────────────────────────────────────────────────────────────
+DT_INSTRUMENTS      = ["EUR_USD", "GBP_USD", "NAS100_USD", "XAU_USD", "SPX500_USD"]
+DT_TARGET_PCT       = 0.02    # stop for the day after +2% NAV daily P&L
+DT_LOSS_LIMIT_PCT   = 0.03    # hard stop for the day at -3% NAV daily loss
+DT_POLL_SECONDS     = 300     # 5 minutes
+DT_GRANULARITY      = "M15"
+DT_RSI_PERIOD       = 14
+DT_ATR_PERIOD       = 14
+DT_MA_PERIOD        = 20      # 20-period MA on M15 = 5 hours
+DT_RSI_LONG         = 55      # gentler than momentum — more frequent signals
+DT_RSI_SHORT        = 45
+DT_NAV_PCT          = 0.02    # risk 2% NAV per trade; one win ≈ 2.7% (2×ATR TP vs 1.5×ATR SL)
+DT_STOP_ATR_MULT    = 1.5
+DT_TP_ATR_MULT      = 2.0
+DT_MIN_ATR_PCT      = 0.001   # 0.1% minimum volatility
+DT_MAX_OPEN         = 3
+DT_MIN_GAP_HOURS    = 1
+DT_MAX_AGE_HOURS    = 24
 
 # ─── OANDA / network ──────────────────────────────────────────────────────────
 OANDA_BACKOFF_BASE       = 1.0

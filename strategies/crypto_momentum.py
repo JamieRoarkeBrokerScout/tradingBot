@@ -24,6 +24,7 @@ from typing import Optional
 from . import config
 from .base import SafeguardsBase, Signal
 from ._utils import oanda_history, atr_series, rsi as compute_rsi
+from .learner import get_learner
 
 log = logging.getLogger("crypto")
 
@@ -224,6 +225,14 @@ class CryptoMomentumStrategy(SafeguardsBase):
             # Size by risk: risk (NAV × 2%) / stop distance
             units = (nav * config.CRYPTO_NAV_PCT) / stop_dist if stop_dist > 0 else 0
             if units <= 0:
+                continue
+
+            learner_features = {
+                "rsi": last_rsi, "atr_pct": atr_pct, "direction": direction,
+            }
+            allow, reason = get_learner().evaluate_entry(self.strategy_name, learner_features)
+            if not allow:
+                log.info("[crypto] learner blocked %s: %s", inst, reason)
                 continue
 
             sig = Signal(

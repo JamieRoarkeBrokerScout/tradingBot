@@ -35,6 +35,7 @@ from strategies.stat_arb        import StatArbStrategy
 from strategies.momentum        import MomentumStrategy
 from strategies.vol_premium     import VolPremiumStrategy
 from strategies.crypto_momentum import CryptoMomentumStrategy
+from strategies.daily_target    import DailyTargetStrategy
 from strategies.brokers.kraken         import KrakenBroker
 from strategies.brokers.kraken_futures import KrakenFuturesBroker
 from database.database import (
@@ -274,7 +275,9 @@ class Runner:
         if "vol_premium" in apis:
             self._strategies["vol_premium"] = VolPremiumStrategy(apis["vol_premium"])
         if "crypto" in apis:
-            self._strategies["crypto"]      = CryptoMomentumStrategy(apis["crypto"])
+            self._strategies["crypto"]       = CryptoMomentumStrategy(apis["crypto"])
+        if "daily_target" in apis:
+            self._strategies["daily_target"] = DailyTargetStrategy(apis["daily_target"])
 
         # Use any available API for shared calls (price polling, NAV)
         self._default_api = next(iter(apis.values()), None)
@@ -320,7 +323,7 @@ class Runner:
                 try:
                     if name == "vol_premium":
                         signals = strategy.tick(current_price=prices.get(config.VOL_INSTRUMENT))
-                    elif name in ("momentum", "crypto"):
+                    elif name in ("momentum", "crypto", "daily_target"):
                         signals = strategy.tick(current_prices=prices)
                     else:
                         signals = strategy.tick()
@@ -363,6 +366,8 @@ class Runner:
                                         units=sig.units,
                                         entry_price=entry_price,
                                         entry_time=now_str,
+                                        stop_price=sig.stop_price if sig.stop_price else None,
+                                        tp_price=sig.tp_price if sig.tp_price else None,
                                     )
                                 except Exception:
                                     log.exception("[runner] failed to persist open trade %s", trade_key)

@@ -130,6 +130,14 @@ def init_db():
         )
     """)
 
+    # ── Migration: add stop_price / tp_price to open_trades ─────────────────
+    cursor.execute("PRAGMA table_info(open_trades)")
+    open_trade_cols = [row[1] for row in cursor.fetchall()]
+    if "stop_price" not in open_trade_cols:
+        cursor.execute("ALTER TABLE open_trades ADD COLUMN stop_price REAL")
+    if "tp_price" not in open_trade_cols:
+        cursor.execute("ALTER TABLE open_trades ADD COLUMN tp_price REAL")
+
     # ── Migration: add learner columns to trades ─────────────────────────────
     cursor.execute("PRAGMA table_info(trades)")
     trade_cols = [row[1] for row in cursor.fetchall()]
@@ -221,7 +229,7 @@ def delete_session(token: str):
 # bot_key values: 'legacy_bot' | 'stat_arb' | 'momentum' | 'vol_premium'
 # ---------------------------------------------------------------------------
 
-ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium", "crypto"]
+ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]
 
 
 def get_user_token(user_id: int, bot_key: str = "legacy_bot") -> dict | None:
@@ -280,16 +288,22 @@ def upsert_open_trade(
     units: float,
     entry_price: float,
     entry_time: str,
+    stop_price: float | None = None,
+    tp_price: float | None = None,
 ) -> None:
     conn = _connect()
     conn.execute(
         """INSERT INTO open_trades
-               (trade_key, strategy, instrument, direction, units, entry_price, entry_time)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+               (trade_key, strategy, instrument, direction, units, entry_price, entry_time,
+                stop_price, tp_price)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(trade_key) DO UPDATE SET
                entry_price = excluded.entry_price,
-               entry_time  = excluded.entry_time""",
-        (trade_key, strategy, instrument, direction, units, entry_price, entry_time),
+               entry_time  = excluded.entry_time,
+               stop_price  = excluded.stop_price,
+               tp_price    = excluded.tp_price""",
+        (trade_key, strategy, instrument, direction, units, entry_price, entry_time,
+         stop_price, tp_price),
     )
     conn.commit()
     conn.close()
@@ -351,7 +365,7 @@ def get_open_trades() -> list[dict]:
 # Strategy state helpers
 # ---------------------------------------------------------------------------
 
-_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium", "crypto"]
+_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]
 
 
 def get_strategy_states() -> dict:
