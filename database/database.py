@@ -351,7 +351,7 @@ def get_open_trades() -> list[dict]:
 # Strategy state helpers
 # ---------------------------------------------------------------------------
 
-_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium"]
+_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium", "crypto"]
 
 
 def get_strategy_states() -> dict:

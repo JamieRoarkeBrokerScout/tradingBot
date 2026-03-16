@@ -339,6 +339,12 @@ class Runner:
 
                             if action == "open":
                                 entry_price = prices.get(sig.instrument, 0.0)
+                                # Kraken prices won't be in the OANDA prices dict — fetch directly
+                                if entry_price == 0.0 and isinstance(api, KrakenFuturesBroker):
+                                    try:
+                                        _, _, entry_price = api.get_prices(sig.instrument)
+                                    except Exception:
+                                        pass
                                 self._open_trades[trade_key] = {
                                     "instrument":     sig.instrument,
                                     "direction":      sig.direction,

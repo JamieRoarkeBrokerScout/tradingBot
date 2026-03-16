@@ -721,7 +721,7 @@ def get_account():
 def get_trades():
     conn = _get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM trades ORDER BY exit_time DESC LIMIT 50")
+    cursor.execute("SELECT * FROM trades ORDER BY exit_time DESC LIMIT 1000")
     trades = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return jsonify(trades)
