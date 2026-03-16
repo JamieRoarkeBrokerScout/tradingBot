@@ -214,10 +214,11 @@ _USER_ENV_PREFIX = {
 }
 
 _STRATEGY_ENV_KEY = {
-    "stat_arb":    "STAT_ARB",
-    "momentum":    "MOMENTUM",
-    "vol_premium": "VOL_PREMIUM",
-    "crypto":      "CRYPTO",
+    "stat_arb":      "STAT_ARB",
+    "momentum":      "MOMENTUM",
+    "vol_premium":   "VOL_PREMIUM",
+    "crypto":        "CRYPTO",
+    "daily_target":  "DAILY_TARGET",
 }
 
 
@@ -889,7 +890,7 @@ def health():
 # Strategy routes
 # ---------------------------------------------------------------------------
 
-VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto"}
+VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto", "daily_target"}
 
 
 @app.route("/api/strategies", methods=["GET"])

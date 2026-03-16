@@ -231,8 +231,10 @@ def _record_trade(
     entry_metadata: str | None = None,
 ) -> None:
     """Write a completed trade to the dashboard's SQLite database."""
-    if entry_price <= 0 or exit_price <= 0:
+    if exit_price <= 0:
         return
+    if entry_price <= 0:
+        entry_price = exit_price  # opened during price-fetch failure; P&L unknown
     pl_points = (exit_price - entry_price) * direction
     raw_pl    = pl_points * units
     try:

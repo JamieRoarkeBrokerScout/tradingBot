@@ -329,8 +329,12 @@ def record_closed_trade(
     strategy_name: str = "",
 ) -> None:
     """Write a manually-closed trade to the trades table."""
-    if entry_price <= 0 or exit_price <= 0:
+    if exit_price <= 0:
         return
+    # If entry_price unknown (e.g. opened during auth failure), set equal to exit so pl_points=0
+    if entry_price <= 0:
+        entry_price = exit_price
+        raw_pl = 0.0
     pl_points = (exit_price - entry_price) * direction
     conn = _connect()
     conn.execute(
