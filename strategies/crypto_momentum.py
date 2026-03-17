@@ -45,6 +45,7 @@ class _Trade:
     trail_active: bool     = False
     trail_stop:   float    = 0.0
     opened_at:    datetime = field(default_factory=_utcnow)
+    bar_count:    int      = 0       # M15 bars since entry (incremented each tick cycle)
 
 
 class CryptoMomentumStrategy(SafeguardsBase):
@@ -135,13 +136,16 @@ class CryptoMomentumStrategy(SafeguardsBase):
             if reason is None and age_days > config.CRYPTO_MAX_AGE_DAYS:
                 reason = "time_exit"
 
-            # RSI midline cross-back
-            if reason is None:
+            # RSI cross-back — only fires after min hold period to avoid noise exits
+            trade.bar_count += 1
+            if reason is None and trade.bar_count >= config.CRYPTO_RSI_MIN_HOLD_BARS:
                 try:
                     latest_rsi = self._latest_rsi(inst)
-                    if trade.direction == +1 and latest_rsi < config.CRYPTO_RSI_EXIT:
+                    rsi_exit_long  = config.CRYPTO_RSI_EXIT          # < 45
+                    rsi_exit_short = 100 - config.CRYPTO_RSI_EXIT    # > 55
+                    if trade.direction == +1 and latest_rsi < rsi_exit_long:
                         reason = "rsi_cross"
-                    elif trade.direction == -1 and latest_rsi > (100 - config.CRYPTO_RSI_EXIT):
+                    elif trade.direction == -1 and latest_rsi > rsi_exit_short:
                         reason = "rsi_cross"
                 except Exception:
                     pass
@@ -197,22 +201,27 @@ class CryptoMomentumStrategy(SafeguardsBase):
             last_close = float(close.iloc[-1])
             last_atr   = float(atr_s.iloc[-1])
             last_rsi   = float(rsi_s.iloc[-1])
+            prev_rsi   = float(rsi_s.iloc[-2]) if len(rsi_s) >= 2 else last_rsi
             last_ma    = float(ma.iloc[-1])
 
             atr_pct = last_atr / last_close if last_close > 0 else 0.0
 
-            log.info("[crypto] %s close=%.2f rsi=%.1f ma%d=%.2f atr_pct=%.4f",
-                     inst, last_close, last_rsi, config.CRYPTO_MA_PERIOD, last_ma, atr_pct)
+            log.info("[crypto] %s close=%.2f rsi=%.1f(prev=%.1f) ma%d=%.2f atr_pct=%.4f",
+                     inst, last_close, last_rsi, prev_rsi, config.CRYPTO_MA_PERIOD, last_ma, atr_pct)
 
             if atr_pct < config.CRYPTO_MIN_ATR_PCT:
                 log.info("[crypto] %s skip: atr_pct=%.4f below min %.4f",
                          inst, atr_pct, config.CRYPTO_MIN_ATR_PCT)
                 continue
 
+            # Require RSI crossover (not just level) — catches momentum building,
+            # not entries when RSI has already been extreme for many bars.
             direction: Optional[int] = None
-            if last_rsi > config.CRYPTO_RSI_LONG and last_close > last_ma:
+            rsi_cross_long  = prev_rsi <= config.CRYPTO_RSI_LONG  and last_rsi > config.CRYPTO_RSI_LONG
+            rsi_cross_short = prev_rsi >= config.CRYPTO_RSI_SHORT and last_rsi < config.CRYPTO_RSI_SHORT
+            if rsi_cross_long and last_close > last_ma:
                 direction = +1
-            elif last_rsi < config.CRYPTO_RSI_SHORT and last_close < last_ma:
+            elif rsi_cross_short and last_close < last_ma:
                 direction = -1
 
             if direction is None:

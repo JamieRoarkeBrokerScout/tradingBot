@@ -76,19 +76,20 @@ CRYPTO_GRANULARITY     = "M15"       # M15: 4× smaller ATR → tight stops → 
 CRYPTO_RSI_PERIOD      = 14
 CRYPTO_ATR_PERIOD      = 14
 CRYPTO_MA_PERIOD       = 50          # 50 × M15 = 12.5 h trend filter
-CRYPTO_RSI_LONG        = 60          # RSI above this → bullish
-CRYPTO_RSI_SHORT       = 40          # RSI below this → bearish
-CRYPTO_RSI_EXIT        = 50          # exit when RSI crosses back through midline
+CRYPTO_RSI_LONG        = 60          # RSI must cross above this (prev bar below) → bullish
+CRYPTO_RSI_SHORT       = 40          # RSI must cross below this (prev bar above) → bearish
+CRYPTO_RSI_EXIT        = 45          # exit long when RSI < 45; exit short when RSI > 55
 CRYPTO_TARGET_LEVERAGE = 3.0         # target 3× NAV notional (minimum meaningful size)
 CRYPTO_MAX_RISK_PCT    = 0.05        # cap single-trade risk at 5% NAV
-CRYPTO_STOP_ATR_MULT   = 1.5         # 1.5× M15 ATR stop
-CRYPTO_TP_ATR_MULT     = 3.0         # 3× M15 ATR take-profit
-CRYPTO_TRAIL_TRIGGER   = 1.0         # ATR profit before trailing activates
-CRYPTO_TRAIL_STOP      = 2.0         # trailing stop distance in ATR
+CRYPTO_STOP_ATR_MULT   = 2.0         # 2.0× M15 ATR — wider to survive M15 noise
+CRYPTO_TP_ATR_MULT     = 4.0         # 4.0× M15 ATR — 2:1 RR maintained
+CRYPTO_TRAIL_TRIGGER   = 1.5         # ATR profit before trailing activates
+CRYPTO_TRAIL_STOP      = 2.5         # trailing stop distance in ATR
 CRYPTO_MIN_ATR_PCT     = 0.001       # 0.1% minimum ATR
 CRYPTO_MAX_OPEN        = 2           # max 1 per instrument, 2 total
-CRYPTO_MIN_GAP_HOURS   = 2
+CRYPTO_MIN_GAP_HOURS   = 4           # was 2 — avoid re-entering same instrument quickly
 CRYPTO_MAX_AGE_DAYS    = 7
+CRYPTO_RSI_MIN_HOLD_BARS = 4         # min M15 bars (1 hour) before RSI exit can fire
 
 # ─── Daily Target ─────────────────────────────────────────────────────────────
 DT_INSTRUMENTS      = ["EUR_USD", "GBP_USD", "NAS100_USD", "XAU_USD", "SPX500_USD"]
