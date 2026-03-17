@@ -445,14 +445,16 @@ def open_trades_route():
         except Exception:
             pass
 
-    # Fetch current prices from Kraken Futures for crypto trades
-    kraken_prices: dict[str, float] = {}
+    # Fetch current prices AND actual positions from Kraken Futures for crypto trades
+    kraken_prices:    dict[str, float] = {}   # instrument → current mid price
+    kraken_positions: dict[str, dict]  = {}   # instrument → actual position dict (entry, size, side)
     crypto_row = all_tokens.get("crypto")
     if crypto_row and crypto_row.get("oanda_access_token"):
         kraken_account_type = crypto_row.get("oanda_account_type", "")
         if kraken_account_type in ("kraken_futures", "kraken_futures_demo"):
             try:
-                from strategies.brokers.kraken_futures import KrakenFuturesBroker
+                from strategies.brokers.kraken_futures import KrakenFuturesBroker, _INST as _KF_INST
+                _KF_INST_REVERSE = {v: k for k, v in _KF_INST.items()}  # PF_XBTUSD → BTC_USD
                 kf_broker = KrakenFuturesBroker(
                     api_key=crypto_row["oanda_account_id"],
                     api_secret=crypto_row["oanda_access_token"],
@@ -465,6 +467,15 @@ def open_trades_route():
                         kraken_prices[inst] = mid
                     except Exception:
                         pass
+                # Fetch actual open positions for accurate entry price and size
+                try:
+                    positions = kf_broker._get_open_positions()
+                    for pos in positions:
+                        oanda_inst = _KF_INST_REVERSE.get(pos.get("symbol", ""))
+                        if oanda_inst:
+                            kraken_positions[oanda_inst] = pos
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -493,16 +504,33 @@ def open_trades_route():
         if strategy == "crypto" and instrument in kraken_prices:
             current = kraken_prices[instrument]
             t["current_price"] = current
-            entry_price = float(t.get("entry_price", 0) or 0)
-            units       = float(t.get("units", 0) or 0)
-            if current > 0 and entry_price > 0 and units > 0:
-                t["unrealized_pl"] = (current - entry_price) * t["direction"] * units
+            kpos = kraken_positions.get(instrument)
+            if kpos and current > 0:
+                # Use Kraken's actual fill price and coin size — most accurate
+                krak_entry = float(kpos.get("price", 0) or 0)
+                krak_size  = float(kpos.get("size",  0) or 0)
+                krak_side  = 1 if kpos.get("side") == "long" else -1
+                if krak_entry > 0 and krak_size > 0:
+                    t["unrealized_pl"] = krak_side * krak_size * (current - krak_entry)
+                    t["entry_price"]   = krak_entry   # patch display entry
+                    t["units"]         = krak_size    # patch display units
+                else:
+                    t["unrealized_pl"] = None
             else:
-                t["unrealized_pl"] = None
+                # Fall back to DB values when Kraken position not found
+                entry_price = float(t.get("entry_price", 0) or 0)
+                units       = float(t.get("units", 0) or 0)
+                if current > 0 and entry_price > 0 and units > 0:
+                    t["unrealized_pl"] = (current - entry_price) * t["direction"] * units
+                else:
+                    t["unrealized_pl"] = None
         elif strategy in oanda_pl and instrument in oanda_pl[strategy]:
             # OANDA's accurate unrealized P&L (accounts for actual fill price + spread)
-            t["unrealized_pl"]  = oanda_pl[strategy][instrument]
-            t["current_price"]  = oanda_price[strategy].get(instrument) or prices.get(instrument)
+            t["unrealized_pl"] = oanda_pl[strategy][instrument]
+            t["current_price"] = oanda_price[strategy].get(instrument) or prices.get(instrument)
+            # Patch entry_price if it was stored as 0 (price-fetch failure at order time)
+            if not float(t.get("entry_price") or 0):
+                t["entry_price"] = oanda_price[strategy].get(instrument, 0) or None
         else:
             # Fallback: mid-price estimate
             current = prices.get(instrument, 0.0)

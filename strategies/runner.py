@@ -281,8 +281,11 @@ class Runner:
         if "daily_target" in apis:
             self._strategies["daily_target"] = DailyTargetStrategy(apis["daily_target"])
 
-        # Use any available API for shared calls (price polling, NAV)
-        self._default_api = next(iter(apis.values()), None)
+        # Prefer a tpqoa (OANDA) API for price polling — Kraken can't price OANDA instruments
+        self._default_api = (
+            next((a for a in apis.values() if isinstance(a, tpqoa.tpqoa)), None)
+            or next(iter(apis.values()), None)
+        )
         self._enabled: dict[str, bool] = {k: False for k in self._strategies}
         # Track open positions so we can record PnL when they close
         # key: f"{strategy_name}:{instrument}"
@@ -317,6 +320,16 @@ class Runner:
 
             prices = _get_mid_prices(self._default_api) if self._default_api else {}
 
+            # Supplement with live Kraken prices for crypto instruments (SOL not on OANDA)
+            crypto_api = self._apis.get("crypto")
+            if isinstance(crypto_api, KrakenFuturesBroker):
+                for inst in config.CRYPTO_INSTRUMENTS:
+                    try:
+                        bid, ask, _ = crypto_api.get_prices(inst)
+                        prices[inst] = (bid + ask) / 2
+                    except Exception:
+                        pass
+
             # Tick each enabled strategy, submit signals via its own API connection
             for name, strategy in self._strategies.items():
                 if not self._enabled[name]:
@@ -343,13 +356,19 @@ class Runner:
                             now_str = datetime.now(timezone.utc).isoformat()
 
                             if action == "open":
-                                entry_price = prices.get(sig.instrument, 0.0)
-                                # Kraken prices won't be in the OANDA prices dict — fetch directly
-                                if entry_price == 0.0 and isinstance(api, KrakenFuturesBroker):
+                                if isinstance(api, KrakenFuturesBroker):
+                                    # Always fetch from Kraken — OANDA prices are a different exchange
                                     try:
                                         _, _, entry_price = api.get_prices(sig.instrument)
                                     except Exception:
-                                        pass
+                                        entry_price = 0.0
+                                else:
+                                    entry_price = prices.get(sig.instrument, 0.0)
+                                    if entry_price == 0.0:
+                                        try:
+                                            _, _, entry_price = api.get_prices(sig.instrument)
+                                        except Exception:
+                                            pass
                                 self._open_trades[trade_key] = {
                                     "instrument":     sig.instrument,
                                     "direction":      sig.direction,
