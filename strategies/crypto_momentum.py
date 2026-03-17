@@ -218,14 +218,20 @@ class CryptoMomentumStrategy(SafeguardsBase):
             if direction is None:
                 continue
 
-            stop      = last_close - direction * config.CRYPTO_STOP_ATR_MULT * last_atr
-            tp        = last_close + direction * config.CRYPTO_TP_ATR_MULT   * last_atr
-            stop_dist = abs(last_close - stop)
+            stop_dist = config.CRYPTO_STOP_ATR_MULT * last_atr
+            stop      = last_close - direction * stop_dist
+            tp        = last_close + direction * config.CRYPTO_TP_ATR_MULT * last_atr
 
-            # Size by risk then apply leverage: (NAV × 2% × leverage) / stop distance
-            units = (nav * config.CRYPTO_NAV_PCT * config.CRYPTO_LEVERAGE) / stop_dist if stop_dist > 0 else 0
-            if units <= 0:
+            # Target-leverage sizing: aim for 3× NAV notional, cap risk at MAX_RISK_PCT
+            units_target = (nav * config.CRYPTO_TARGET_LEVERAGE) / last_close if last_close > 0 else 0
+            if units_target <= 0:
                 continue
+            risk_pct = (units_target * stop_dist) / nav if nav > 0 else 1.0
+            if risk_pct > config.CRYPTO_MAX_RISK_PCT:
+                # ATR stop is too wide for this account size — scale down to fit risk cap
+                units = (nav * config.CRYPTO_MAX_RISK_PCT) / stop_dist
+            else:
+                units = units_target
 
             learner_features = {
                 "rsi": last_rsi, "atr_pct": atr_pct, "direction": direction,
@@ -261,8 +267,8 @@ class CryptoMomentumStrategy(SafeguardsBase):
 
     def _fetch_candles(self, instrument: str):
         end   = _utcnow()
-        # Crypto is 24/7: 100 H1 bars = ~4.2 days. Use 6 days buffer.
-        start = end - timedelta(days=6)
+        # 72 h gives 288 M15 bars — enough for MA50 + RSI warmup on 24/7 crypto
+        start = end - timedelta(hours=72)
         return oanda_history(self._api, instrument, start, end, config.CRYPTO_GRANULARITY)
 
     def _latest_rsi(self, instrument: str) -> float:

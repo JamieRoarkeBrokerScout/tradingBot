@@ -253,10 +253,17 @@ class MomentumStrategy(SafeguardsBase):
 
             stop_dist = abs(last_close - stop)
             units = (nav * config.MOMENTUM_NAV_PCT) / stop_dist if stop_dist > 0 else 0
-            if units < 1:
-                log.debug("[%s] skipping %s: units %.3f < 1 (nav=%.0f, stop_dist=%.4f)",
-                          self.strategy_name, inst, units, nav, stop_dist)
+            if units <= 0:
                 continue
+            if units < 1:
+                # Round up to 1 unit minimum; skip if even 1 unit risks too much
+                risk_one_unit = stop_dist / nav if nav > 0 else 1.0
+                if risk_one_unit > config.HALT_MAX_TRADE_SIZE_PCT:
+                    log.debug("[%s] %s skip: 1-unit risk=%.1f%% > %.0f%% limit",
+                              self.strategy_name, inst, risk_one_unit * 100,
+                              config.HALT_MAX_TRADE_SIZE_PCT * 100)
+                    continue
+                units = 1.0
 
             atr_pct = last_atr / last_close if last_close > 0 else 0.0
             sig = Signal(

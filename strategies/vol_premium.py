@@ -160,15 +160,16 @@ class VolPremiumStrategy(SafeguardsBase):
                 log.info("[%s] learner blocked entry: %s", self.strategy_name, reason)
                 return signals
 
-            stop_dist = config.VOL_STOP_ATR_MULT * atr
-            units = (nav * config.VOL_NAV_PCT) / stop_dist if stop_dist > 0 else 0
-            if units < 1:
-                log.debug("[%s] skipping entry: units %.3f < 1 (nav=%.0f, stop_dist=%.4f)",
-                          self.strategy_name, units, nav, stop_dist)
+            # Risk budget = VOL_NAV_PCT × NAV; minimum 1 unit; adjust stop to hit budget exactly
+            max_risk_usd = nav * config.VOL_NAV_PCT
+            units_raw    = max_risk_usd / (config.VOL_STOP_ATR_MULT * atr) if atr > 0 else 0
+            if units_raw <= 0:
                 return signals
+            units            = max(1.0, round(units_raw))
+            actual_stop_dist = max_risk_usd / units   # tighter stop if rounded up to 1
 
-            stop = price + config.VOL_STOP_ATR_MULT * atr   # SHORT → stop above entry
-            tp   = price - config.VOL_TP_ATR_MULT   * atr   # SHORT → TP below entry
+            stop = price + actual_stop_dist   # SHORT → stop above entry
+            tp   = price - config.VOL_TP_ATR_MULT * atr   # SHORT → TP below entry
 
             sig = Signal(
                 instrument=config.VOL_INSTRUMENT,
@@ -178,7 +179,7 @@ class VolPremiumStrategy(SafeguardsBase):
                 tp_price=tp,
                 strategy=self.strategy_name,
                 meta={"action": "open", "iv_rv_ratio": iv_rv_ratio, "vix_est": estimated_vix,
-                      "stop_dist": stop_dist},
+                      "stop_dist": actual_stop_dist},
             )
 
             if not self.approve_trade(sig):
