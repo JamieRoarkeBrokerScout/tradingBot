@@ -258,7 +258,7 @@ def seed_tokens_from_env() -> None:
 def _build_creds_map(user_id: int) -> dict:
     """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots."""
     creds_map = {}
-    for bot_key in ["stat_arb", "momentum", "vol_premium", "crypto"]:
+    for bot_key in ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]:
         row = get_user_token(user_id, bot_key)
         if row:
             creds_map[bot_key] = {
