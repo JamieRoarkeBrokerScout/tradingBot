@@ -149,6 +149,19 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_trades_strategy ON trades(strategy_name)"
     )
 
+    # ── One-time cleanup: remove corrupted crypto trade records ───────────────
+    # Early bot versions used wrong unit conventions (USD notional instead of
+    # coin amounts), producing absurd raw_pl values. For a $2k account at 3×
+    # leverage the maximum realistic single-trade loss is ~$300. Anything over
+    # $1000 absolute is from the corrupted era and safe to purge.
+    cursor.execute("""
+        DELETE FROM trades
+        WHERE strategy_name = 'crypto' AND ABS(raw_pl) > 1000
+    """)
+    deleted = cursor.rowcount
+    if deleted:
+        print(f"[db_migration] purged {deleted} corrupted crypto trade record(s)")
+
     conn.commit()
     conn.close()
 

@@ -404,9 +404,9 @@ def _fetch_oanda_prices(row: dict, instruments: list[str]) -> dict[str, float]:
 @app.route("/api/open_trades", methods=["GET"])
 @require_auth
 def open_trades_route():
+    from datetime import datetime, timezone as _tz
     trades = get_open_trades()
-    if not trades:
-        return jsonify([])
+    # Don't return early — Kraken may have live positions not yet in DB
 
     all_tokens = get_all_user_tokens(g.user_id)
 
@@ -496,6 +496,32 @@ def open_trades_route():
                 prices = _fetch_oanda_prices(token_row, list(set(fallback_instruments)))
             except Exception:
                 pass
+
+    # Synthesise virtual trade rows for Kraken positions not tracked in DB.
+    # This happens when a deploy wipes open_trades but the position is still live.
+    tracked_crypto = {t["instrument"] for t in trades if t["strategy"] == "crypto"}
+    for inst, kpos in kraken_positions.items():
+        if inst in tracked_crypto:
+            continue
+        krak_entry = float(kpos.get("price", 0) or 0)
+        krak_size  = float(kpos.get("size",  0) or 0)
+        krak_side  = 1 if kpos.get("side") == "long" else -1
+        current = kraken_prices.get(inst, 0.0)
+        if krak_entry > 0 and krak_size > 0 and current > 0:
+            pl = krak_side * krak_size * (current - krak_entry)
+            trades.append({
+                "trade_key":    f"crypto:{inst}",
+                "strategy":     "crypto",
+                "instrument":   inst,
+                "direction":    krak_side,
+                "units":        krak_size,
+                "entry_price":  krak_entry,
+                "stop_price":   kpos.get("stopPrice"),
+                "tp_price":     None,
+                "entry_time":   datetime.now(_tz.utc).isoformat(),
+                "current_price": current,
+                "unrealized_pl": pl,
+            })
 
     for t in trades:
         strategy   = t["strategy"]

@@ -56,6 +56,16 @@ _PRICE_INSTRUMENTS = [
     "EUR_USD", "GBP_USD", "BTC_USD", "ETH_USD",
 ]
 
+# Kraken Futures symbol mapping (mirrors kraken_futures._INST)
+_KF_INST = {
+    "BTC_USD": "PF_XBTUSD",
+    "ETH_USD": "PF_ETHUSD",
+    "SOL_USD": "PF_SOLUSD",
+    "LTC_USD": "PF_LTCUSD",
+    "XRP_USD": "PF_XRPUSD",
+    "BCH_USD": "PF_BCHUSD",
+}
+
 
 # ─── OANDA helpers ────────────────────────────────────────────────────────────
 
@@ -295,10 +305,12 @@ class Runner:
     def run(self) -> None:
         log.info("Strategy runner started (pid=%d)", os.getpid())
 
-        last_state_reload = 0.0
-        last_nav_update   = 0.0
-        STATE_INTERVAL    = 30      # seconds
-        NAV_INTERVAL      = 300     # seconds
+        last_state_reload   = 0.0
+        last_nav_update     = 0.0
+        last_kraken_sync    = 0.0
+        STATE_INTERVAL      = 30      # seconds
+        NAV_INTERVAL        = 300     # seconds
+        KRAKEN_SYNC_INTERVAL = 60     # seconds — detect exchange SL/TP fires
 
         while self._running:
             now = time.monotonic()
@@ -329,6 +341,56 @@ class Runner:
                         prices[inst] = (bid + ask) / 2
                     except Exception:
                         pass
+
+            # Kraken position sync — detect positions closed by exchange SL/TP
+            if isinstance(crypto_api, KrakenFuturesBroker) and now - last_kraken_sync >= KRAKEN_SYNC_INTERVAL:
+                last_kraken_sync = now
+                try:
+                    krak_open = {p["symbol"] for p in crypto_api._get_open_positions()}
+                    for inst in list(config.CRYPTO_INSTRUMENTS):
+                        trade_key = f"crypto:{inst}"
+                        if trade_key not in self._open_trades:
+                            continue
+                        krak_sym = _KF_INST.get(inst)
+                        if krak_sym and krak_sym not in krak_open:
+                            # Position closed on exchange (SL/TP fired) — record it
+                            log.info("[runner] Kraken SL/TP detected for %s — recording close", inst)
+                            entry = self._open_trades.pop(trade_key, None)
+                            try:
+                                delete_open_trade(trade_key)
+                            except Exception:
+                                pass
+                            if entry:
+                                exit_price = prices.get(inst, 0.0)
+                                if exit_price == 0.0:
+                                    try:
+                                        _, _, exit_price = crypto_api.get_prices(inst)
+                                    except Exception:
+                                        pass
+                                raw_pl = ((exit_price - entry["entry_price"])
+                                          * entry["direction"] * entry["units"])
+                                _record_trade(
+                                    instrument=entry["instrument"],
+                                    direction=entry["direction"],
+                                    units=entry["units"],
+                                    entry_price=entry["entry_price"],
+                                    exit_price=exit_price,
+                                    entry_time=entry["entry_time"],
+                                    exit_time=datetime.now(timezone.utc).isoformat(),
+                                    exit_reason="exchange_sl_tp",
+                                    strategy_name=entry.get("strategy_name", ""),
+                                    entry_metadata=entry.get("entry_metadata"),
+                                )
+                                strat_obj = self._strategies.get("crypto")
+                                if strat_obj:
+                                    strat_obj.record_fill(raw_pl)
+                                    strat_obj.on_position_close()
+                                # Remove from strategy's in-memory trades dict
+                                crypto_strat = self._strategies.get("crypto")
+                                if crypto_strat and hasattr(crypto_strat, "_trades"):
+                                    crypto_strat._trades.pop(inst, None)
+                except Exception:
+                    log.exception("[runner] Kraken position sync failed")
 
             # Tick each enabled strategy, submit signals via its own API connection
             for name, strategy in self._strategies.items():
@@ -392,6 +454,14 @@ class Runner:
                                     )
                                 except Exception:
                                     log.exception("[runner] failed to persist open trade %s", trade_key)
+                                # Update safeguard counters
+                                nav_for_lev = getattr(strategy, "_kraken_nav_cache", 0) or 0
+                                if nav_for_lev <= 0:
+                                    from strategies.base import _nav as _global_nav
+                                    nav_for_lev = _global_nav or 1.0
+                                lev_contrib = (sig.units * entry_price / nav_for_lev) if nav_for_lev > 0 else 0.0
+                                strategy.on_position_open(lev_contrib)
+
                             elif action == "close":
                                 entry = self._open_trades.pop(trade_key, None)
                                 try:
@@ -418,6 +488,13 @@ class Runner:
                                         strategy_name=entry.get("strategy_name", ""),
                                         entry_metadata=entry.get("entry_metadata"),
                                     )
+                                    # Update safeguard counters — record_fill updates _daily_pnl + consec_loss
+                                    if entry["entry_price"] > 0 and exit_price > 0:
+                                        raw_pl = ((exit_price - entry["entry_price"])
+                                                  * entry["direction"] * entry["units"])
+                                        strategy.record_fill(raw_pl)
+                                    else:
+                                        strategy.record_fill(0.0)
 
                 except Exception:
                     log.exception("[runner] error ticking strategy %s", name)

@@ -286,5 +286,20 @@ class CryptoMomentumStrategy(SafeguardsBase):
         return float(compute_rsi(close, config.CRYPTO_RSI_PERIOD).iloc[-1])
 
     def _nav_safe(self) -> float:
-        from .base import _nav
-        return _nav if _nav > 0 else 100_000.0
+        """Use the Kraken account balance — not OANDA — for position sizing."""
+        now = _utcnow()
+        if (
+            not hasattr(self, "_kraken_nav_cache")
+            or (now - getattr(self, "_kraken_nav_ts", now)).total_seconds() > 300
+        ):
+            try:
+                summary = self._api.get_account_summary()
+                nav = float(summary.get("nav", summary.get("balance", 0)) or 0)
+                if nav > 0:
+                    self._kraken_nav_cache: float = nav
+                    self._kraken_nav_ts = now
+                    log.info("[crypto] Kraken NAV updated: $%.2f", nav)
+            except Exception as exc:
+                log.warning("[crypto] Kraken NAV fetch failed: %s", exc)
+        cached = getattr(self, "_kraken_nav_cache", 0.0)
+        return cached if cached > 0 else 1_000.0
