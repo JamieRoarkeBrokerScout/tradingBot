@@ -85,5 +85,6 @@ export interface StrategiesResponse {
         vol_premium:   StrategyState;
         crypto:        StrategyState;
         daily_target:  StrategyState;
+        scalp:         StrategyState;
     };
 }

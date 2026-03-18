@@ -45,6 +45,13 @@ const STRATEGY_META = [
         description: 'RSI + 20MA on M15 across EUR, GBP, NAS100, XAU, SPX. Stops at +2% daily P&L, halts at -3% loss.',
         color: 'rose',
     },
+    {
+        key: 'scalp' as const,
+        label: 'Scalp',
+        subtitle: '5-Min EMA Cross',
+        description: '8/21 EMA crossover + RSI filter on NAS100, XAU, GBP (M5). 1.5× ATR stop, 4.5× ATR TP. ~$200 account.',
+        color: 'orange',
+    },
 ] as const;
 
 type StrategyKey = typeof STRATEGY_META[number]['key'];
@@ -74,6 +81,11 @@ const STRATEGY_COLORS: Record<string, { badge: string; toggle: string; glow: str
         badge: 'bg-rose-100 text-rose-700 border-rose-200',
         toggle: 'bg-rose-600 hover:bg-rose-700',
         glow: 'shadow-rose-100',
+    },
+    orange: {
+        badge: 'bg-orange-100 text-orange-700 border-orange-200',
+        toggle: 'bg-orange-500 hover:bg-orange-600',
+        glow: 'shadow-orange-100',
     },
 };
 
@@ -124,6 +136,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
             vol_premium: { enabled: false },
             crypto: { enabled: false },
             daily_target: { enabled: false },
+            scalp: { enabled: false },
         },
     });
     const [togglingStrategy, setTogglingStrategy] = useState<StrategyKey | null>(null);

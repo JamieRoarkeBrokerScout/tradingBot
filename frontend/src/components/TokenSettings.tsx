@@ -7,10 +7,13 @@ interface Props {
 }
 
 const BOTS = [
-    { key: 'legacy_bot',  label: 'Momentum Bot',  description: 'Original momentum trader (NAS100, Gold, Silver, Copper)' },
-    { key: 'stat_arb',    label: 'Stat Arb',       description: 'Pairs trading on XAU/XAG and SPX/BCO' },
-    { key: 'momentum',    label: 'Momentum',        description: 'RSI + volume strategy on SPX and Gold' },
-    { key: 'vol_premium', label: 'Vol Premium',     description: 'Short volatility on SPX500' },
+    { key: 'legacy_bot',   label: 'Momentum Bot',  description: 'Original momentum trader (NAS100, Gold, Silver, Copper)' },
+    { key: 'stat_arb',     label: 'Stat Arb',       description: 'Pairs trading on XAU/XAG and SPX/BCO' },
+    { key: 'momentum',     label: 'Momentum',        description: 'RSI + volume strategy on SPX and Gold' },
+    { key: 'vol_premium',  label: 'Vol Premium',     description: 'Short volatility on SPX500' },
+    { key: 'crypto',       label: 'Crypto',          description: 'RSI momentum on BTC/ETH/SOL via Kraken Futures (use Kraken API key, not OANDA)' },
+    { key: 'daily_target', label: 'Daily Target',    description: 'M15 RSI + 20MA on EUR, GBP, NAS100, XAU, SPX. Stops at +2% daily P&L.' },
+    { key: 'scalp',        label: 'Scalp',           description: '5-min EMA crossover on NAS100, XAU, GBP. ~$200 dedicated OANDA account.' },
 ] as const;
 
 type BotKey = typeof BOTS[number]['key'];
@@ -32,13 +35,17 @@ export default function TokenSettings({ onClose }: Props) {
     const [activeBot, setActiveBot] = useState<BotKey>('legacy_bot');
     const [allTokens, setAllTokens] = useState<AllTokens>({});
     const [formState, setFormState] = useState<Record<BotKey, { accountId: string; accessToken: string; accountType: string }>>({
-        legacy_bot:  { accountId: '', accessToken: '', accountType: 'practice' },
-        stat_arb:    { accountId: '', accessToken: '', accountType: 'practice' },
-        momentum:    { accountId: '', accessToken: '', accountType: 'practice' },
-        vol_premium: { accountId: '', accessToken: '', accountType: 'practice' },
+        legacy_bot:   { accountId: '', accessToken: '', accountType: 'practice' },
+        stat_arb:     { accountId: '', accessToken: '', accountType: 'practice' },
+        momentum:     { accountId: '', accessToken: '', accountType: 'practice' },
+        vol_premium:  { accountId: '', accessToken: '', accountType: 'practice' },
+        crypto:       { accountId: '', accessToken: '', accountType: 'live' },
+        daily_target: { accountId: '', accessToken: '', accountType: 'practice' },
+        scalp:        { accountId: '', accessToken: '', accountType: 'practice' },
     });
     const [saveStatus, setSaveStatus] = useState<Record<BotKey, SaveStatus>>({
         legacy_bot: 'idle', stat_arb: 'idle', momentum: 'idle', vol_premium: 'idle',
+        crypto: 'idle', daily_target: 'idle', scalp: 'idle',
     });
 
     useEffect(() => {
