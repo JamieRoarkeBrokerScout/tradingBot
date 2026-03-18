@@ -242,7 +242,7 @@ def delete_session(token: str):
 # bot_key values: 'legacy_bot' | 'stat_arb' | 'momentum' | 'vol_premium'
 # ---------------------------------------------------------------------------
 
-ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]
+ALL_BOT_KEYS = ["legacy_bot", "stat_arb", "momentum", "vol_premium", "crypto", "daily_target", "scalp"]
 
 
 def get_user_token(user_id: int, bot_key: str = "legacy_bot") -> dict | None:
@@ -384,7 +384,7 @@ def get_open_trades() -> list[dict]:
 # Strategy state helpers
 # ---------------------------------------------------------------------------
 
-_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]
+_ALL_STRATEGIES = ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target", "scalp"]
 
 
 def get_strategy_states() -> dict:

@@ -36,6 +36,7 @@ from strategies.momentum        import MomentumStrategy
 from strategies.vol_premium     import VolPremiumStrategy
 from strategies.crypto_momentum import CryptoMomentumStrategy
 from strategies.daily_target    import DailyTargetStrategy
+from strategies.scalp           import ScalpStrategy
 from strategies.brokers.kraken         import KrakenBroker
 from strategies.brokers.kraken_futures import KrakenFuturesBroker
 from database.database import (
@@ -307,6 +308,8 @@ class Runner:
             self._strategies["crypto"]       = CryptoMomentumStrategy(apis["crypto"])
         if "daily_target" in apis:
             self._strategies["daily_target"] = DailyTargetStrategy(apis["daily_target"])
+        if "scalp" in apis:
+            self._strategies["scalp"] = ScalpStrategy(apis["scalp"])
 
         # Prefer a tpqoa (OANDA) API for price polling — Kraken can't price OANDA instruments
         self._default_api = (
@@ -417,7 +420,7 @@ class Runner:
                 try:
                     if name == "vol_premium":
                         signals = strategy.tick(current_price=prices.get(config.VOL_INSTRUMENT))
-                    elif name in ("momentum", "crypto", "daily_target"):
+                    elif name in ("momentum", "crypto", "daily_target", "scalp"):
                         signals = strategy.tick(current_prices=prices)
                     else:
                         signals = strategy.tick()

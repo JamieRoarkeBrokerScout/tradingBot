@@ -40,6 +40,7 @@ _DEFAULT_STRATEGY_STATE = {
     "vol_premium":   {"enabled": False},
     "crypto":        {"enabled": False},
     "daily_target":  {"enabled": False},
+    "scalp":         {"enabled": False},
 }
 
 # Global strategy runner process
@@ -219,6 +220,7 @@ _STRATEGY_ENV_KEY = {
     "vol_premium":   "VOL_PREMIUM",
     "crypto":        "CRYPTO",
     "daily_target":  "DAILY_TARGET",
+    "scalp":         "SCALP",
 }
 
 
@@ -258,7 +260,7 @@ def seed_tokens_from_env() -> None:
 def _build_creds_map(user_id: int) -> dict:
     """Build a dict of {bot_key: {account_id, access_token, account_type}} for all strategy bots."""
     creds_map = {}
-    for bot_key in ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target"]:
+    for bot_key in ["stat_arb", "momentum", "vol_premium", "crypto", "daily_target", "scalp"]:
         row = get_user_token(user_id, bot_key)
         if row:
             creds_map[bot_key] = {
@@ -767,7 +769,7 @@ def get_account():
     result: dict = {}
 
     # ── OANDA accounts ────────────────────────────────────────────────────────
-    for bot_key in ["stat_arb", "momentum", "vol_premium", "daily_target"]:
+    for bot_key in ["stat_arb", "momentum", "vol_premium", "daily_target", "scalp"]:
         row = all_tokens.get(bot_key)
         if not row or not row.get("oanda_access_token"):
             continue
@@ -1018,7 +1020,7 @@ def health():
 # Strategy routes
 # ---------------------------------------------------------------------------
 
-VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto", "daily_target"}
+VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto", "daily_target", "scalp"}
 
 
 @app.route("/api/strategies", methods=["GET"])
