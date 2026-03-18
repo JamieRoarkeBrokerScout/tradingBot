@@ -137,36 +137,53 @@ def _submit(api, sig) -> bool:
 
     # ── OANDA / tpqoa path ────────────────────────────────────────────────────
     oanda_units = int(signed_units)   # OANDA requires integer units
+
     if action == "close":
-        oanda_close = max(1, int(close_units))
+        # Use the position close endpoint — closes all units regardless of side.
+        # close signal direction is OPPOSITE of the original position:
+        #   sig.direction == -1 → we're selling → original was LONG  → longUnits="ALL"
+        #   sig.direction == +1 → we're buying  → original was SHORT → shortUnits="ALL"
+        try:
+            if sig.direction < 0:
+                resp = api.ctx.position.close(api.account_id, sig.instrument, longUnits="ALL")
+            else:
+                resp = api.ctx.position.close(api.account_id, sig.instrument, shortUnits="ALL")
+            log.info("[runner] position.close status=%s body=%s", resp.status, resp.body)
+            if resp.status in (200, 201):
+                return True
+            # If NO_UNITS_TO_CLOSEOUT in the first direction, try the other
+            body_str = str(resp.body)
+            if "NO_UNITS_TO_CLOSEOUT" in body_str or "CLOSEOUT_POSITION_DOESNT_EXIST" in body_str:
+                if sig.direction < 0:
+                    resp2 = api.ctx.position.close(api.account_id, sig.instrument, shortUnits="ALL")
+                else:
+                    resp2 = api.ctx.position.close(api.account_id, sig.instrument, longUnits="ALL")
+                log.info("[runner] position.close fallback status=%s body=%s", resp2.status, resp2.body)
+                if resp2.status in (200, 201):
+                    return True
+                # Position genuinely gone (already closed by SL/TP on OANDA)
+                if "NO_UNITS_TO_CLOSEOUT" in str(resp2.body) or "CLOSEOUT_POSITION_DOESNT_EXIST" in str(resp2.body):
+                    log.info("[runner] position for %s already closed on OANDA", sig.instrument)
+                    return True
+            log.error("[runner] OANDA position close failed for %s: status=%s body=%s",
+                      sig.instrument, resp.status, resp.body)
+            return False
+        except Exception as exc:
+            log.error("[runner] OANDA position.close raised for %s: %s", sig.instrument, exc)
+            return False
 
     for attempt in range(config.OANDA_MAX_RETRIES):
         try:
-            if action == "close":
-                try:
-                    resp = api.close_trade(sig.instrument, oanda_close)
-                    log.info("[runner] close_trade response: %s", resp)
-                    # tpqoa returns the raw v20 response body; check for error codes
-                    if isinstance(resp, dict) and resp.get("errorCode"):
-                        log.error("[runner] OANDA close failed for %s: %s",
-                                  sig.instrument, resp.get("errorMessage", resp))
-                        return False
-                    return True
-                except Exception as exc:
-                    log.error("[runner] OANDA close_trade raised for %s: %s",
-                              sig.instrument, exc)
-                    return False
-            else:
-                # Bypass tpqoa's create_order (silently returns None on error).
-                # Call the underlying v20 context directly to get the full response.
-                # positionFill=OPEN_ONLY prevents OANDA cancelling orders for FX/CFD
-                # pairs where DEFAULT fill would attempt to close an opposing position.
-                request = api.ctx.order.market(
-                    api.account_id,
-                    instrument=sig.instrument,
-                    units=oanda_units,
-                    positionFill="OPEN_ONLY",
-                )
+            # Bypass tpqoa's create_order (silently returns None on error).
+            # Call the underlying v20 context directly to get the full response.
+            # positionFill=OPEN_ONLY prevents OANDA cancelling orders for FX/CFD
+            # pairs where DEFAULT fill would attempt to close an opposing position.
+            request = api.ctx.order.market(
+                api.account_id,
+                instrument=sig.instrument,
+                units=oanda_units,
+                positionFill="OPEN_ONLY",
+            )
                 body = request.body
                 status = request.status
                 log.info("[runner] OANDA status=%s body=%s", status, body)
