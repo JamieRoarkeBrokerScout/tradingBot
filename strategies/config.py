@@ -111,7 +111,7 @@ DT_MIN_GAP_HOURS    = 1
 DT_MAX_AGE_HOURS    = 24
 
 # ─── Scalp (5-min high-frequency) ────────────────────────────────────────────
-# ~$200 account. Fast EMA crossover + RSI filter. Tight stop, 3:1 R:R.
+# ~$200 account. Fast EMA crossover + RSI filter. High leverage, quick exits.
 # OANDA minimum granularity is M5; M3 is not supported.
 SCALP_INSTRUMENTS    = ["NAS100_USD", "XAU_USD", "GBP_USD"]
 SCALP_POLL_SECONDS   = 60        # check every 60 s — need to be fast for 5-min bars
@@ -120,16 +120,17 @@ SCALP_CANDLES        = 120       # 10 hours of 5-min bars for warm-up
 SCALP_EMA_FAST       = 8
 SCALP_EMA_SLOW       = 21
 SCALP_RSI_PERIOD     = 14
-SCALP_RSI_LONG       = 55        # RSI must be above this for a long entry
-SCALP_RSI_SHORT      = 45        # RSI must be below this for a short entry
+SCALP_RSI_LONG       = 50        # RSI just above midline — enter on momentum
+SCALP_RSI_SHORT      = 50        # RSI just below midline — enter on momentum
 SCALP_ATR_PERIOD     = 14
-SCALP_STOP_ATR_MULT  = 1.5       # tight stop — 1.5× ATR
-SCALP_TP_ATR_MULT    = 4.5       # 3:1 R:R
-SCALP_NAV_PCT        = 0.05      # risk 5% NAV per trade ($10 on $200)
+SCALP_STOP_ATR_MULT  = 0.8       # tight stop — cut fast
+SCALP_TP_ATR_MULT    = 1.6       # 2:1 R:R — take profit quickly
+SCALP_NAV_PCT        = 0.15      # risk 15% NAV per trade ($30 on $200) — high leverage
 SCALP_MAX_OPEN       = 2         # max concurrent positions
-SCALP_MIN_GAP_MINS   = 15        # cooldown per instrument after a trade
-SCALP_MAX_AGE_BARS   = 15        # force-close after 75 min if neither SL nor TP hit
-SCALP_MIN_ATR_PCT    = 0.0003    # skip if ATR < 0.03% (flat/no volatility)
+SCALP_MIN_GAP_MINS   = 5         # 5 min cooldown — re-enter quickly
+SCALP_MAX_AGE_BARS   = 6         # force-close after 30 min
+SCALP_MIN_ATR_PCT    = 0.0002    # skip only if completely flat
+SCALP_CROSS_LOOKBACK = 3         # accept EMA cross within last 3 bars (not just last bar)
 
 # ─── OANDA / network ──────────────────────────────────────────────────────────
 OANDA_BACKOFF_BASE       = 1.0

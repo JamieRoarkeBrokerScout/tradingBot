@@ -174,9 +174,20 @@ class ScalpStrategy(SafeguardsBase):
                 log.debug("[scalp] %s skip: ATR too low (%.4f)", inst, atr_pct)
                 continue
 
-            # Detect EMA crossover on the last completed bar
-            bullish_cross = ema_f_prev <= ema_s_prev and ema_f_now > ema_s_now
-            bearish_cross = ema_f_prev >= ema_s_prev and ema_f_now < ema_s_now
+            # Detect EMA crossover within last SCALP_CROSS_LOOKBACK bars
+            # (not just the final bar) so a recent cross still triggers entry
+            lookback = getattr(config, 'SCALP_CROSS_LOOKBACK', 3)
+            n = len(ema_fast)
+            bullish_cross = any(
+                ema_fast.iloc[-(i + 2)] <= ema_slow.iloc[-(i + 2)]
+                and ema_fast.iloc[-(i + 1)] > ema_slow.iloc[-(i + 1)]
+                for i in range(min(lookback, n - 2))
+            )
+            bearish_cross = any(
+                ema_fast.iloc[-(i + 2)] >= ema_slow.iloc[-(i + 2)]
+                and ema_fast.iloc[-(i + 1)] < ema_slow.iloc[-(i + 1)]
+                for i in range(min(lookback, n - 2))
+            )
 
             direction: Optional[int] = None
             if bullish_cross and last_rsi > config.SCALP_RSI_LONG:
