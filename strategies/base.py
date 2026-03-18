@@ -63,9 +63,13 @@ class SafeguardsBase:
 
     Required in subclass:
         strategy_name: str  (class attribute)
+
+    Optional overrides:
+        max_trade_size_pct: float  — per-strategy cap; None = use config value
     """
-    strategy_name:   str  = "base"
-    trades_weekends: bool = False   # override to True for 24/7 instruments (crypto)
+    strategy_name:      str          = "base"
+    trades_weekends:    bool         = False   # override to True for 24/7 instruments (crypto)
+    max_trade_size_pct: float | None = None    # None = use HALT_MAX_TRADE_SIZE_PCT from config
 
     # ── Approval gate ─────────────────────────────────────────────────────────
 
@@ -96,7 +100,12 @@ class SafeguardsBase:
                 stop_dist = signal.meta.get("stop_dist", 0.0)
                 if stop_dist > 0:
                     risk_pct = (signal.units * stop_dist) / _nav
-                    if risk_pct > config.HALT_MAX_TRADE_SIZE_PCT:
+                    max_tsp = (
+                        self.max_trade_size_pct
+                        if self.max_trade_size_pct is not None
+                        else config.HALT_MAX_TRADE_SIZE_PCT
+                    )
+                    if risk_pct > max_tsp:
                         blocks.append(f"trade_size={risk_pct:.2%}")
 
             if _open_pos >= config.HALT_MAX_OPEN_POSITIONS:

@@ -50,8 +50,9 @@ class _Trade:
 class ScalpStrategy(SafeguardsBase):
     """High-frequency 5-min EMA-crossover scalper for a ~$200 account."""
 
-    strategy_name   = "scalp"
-    trades_weekends = False
+    strategy_name      = "scalp"
+    trades_weekends    = False
+    max_trade_size_pct = 0.20   # allow up to 20% NAV risk per trade (high-leverage account)
 
     def __init__(self, api) -> None:
         self._api          = api

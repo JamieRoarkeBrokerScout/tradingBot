@@ -291,5 +291,20 @@ class DailyTargetStrategy(SafeguardsBase):
         return oanda_history(self._api, instrument, start, end, config.DT_GRANULARITY)
 
     def _nav_safe(self) -> float:
+        """Read NAV from this strategy's own OANDA account (5-min cache)."""
+        now = _utcnow()
+        if (not hasattr(self, "_dt_nav_cache")
+                or (now - getattr(self, "_dt_nav_ts", now)).total_seconds() > 300):
+            try:
+                summary = self._api.get_account_summary()
+                nav = float(summary.get("NAV", summary.get("balance", 0)) or 0)
+                if nav > 0:
+                    self._dt_nav_cache: float = nav
+                    self._dt_nav_ts = now
+            except Exception as exc:
+                log.warning("[daily_target] NAV fetch failed: %s", exc)
+        cached = getattr(self, "_dt_nav_cache", 0.0)
+        if cached > 0:
+            return cached
         from .base import _nav
-        return _nav if _nav > 0 else 100_000.0
+        return _nav if _nav > 0 else 1_000.0
