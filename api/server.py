@@ -460,14 +460,7 @@ def open_trades_route():
                     api_secret=crypto_row["oanda_access_token"],
                     use_demo=(kraken_account_type == "kraken_futures_demo"),
                 )
-                crypto_instruments = {t["instrument"] for t in trades if t["strategy"] == "crypto"}
-                for inst in crypto_instruments:
-                    try:
-                        _, _, mid = kf_broker.get_prices(inst)
-                        kraken_prices[inst] = mid
-                    except Exception:
-                        pass
-                # Fetch actual open positions for accurate entry price and size
+                # Fetch actual open positions first — so we know which instruments to price
                 try:
                     positions = kf_broker._get_open_positions()
                     for pos in positions:
@@ -476,6 +469,17 @@ def open_trades_route():
                             kraken_positions[oanda_inst] = pos
                 except Exception:
                     pass
+                # Price every instrument that has an open position OR is tracked in DB
+                price_targets = (
+                    {t["instrument"] for t in trades if t["strategy"] == "crypto"}
+                    | set(kraken_positions.keys())
+                )
+                for inst in price_targets:
+                    try:
+                        _, _, mid = kf_broker.get_prices(inst)
+                        kraken_prices[inst] = mid
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

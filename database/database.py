@@ -344,10 +344,12 @@ def record_closed_trade(
     """Write a manually-closed trade to the trades table."""
     if exit_price <= 0:
         return
-    # If entry_price unknown (e.g. opened during auth failure), set equal to exit so pl_points=0
+    # If entry_price unknown, set equal to exit so pl_points = 0 for display,
+    # but preserve raw_pl if the broker already computed it accurately (e.g. OANDA fill pl)
     if entry_price <= 0:
         entry_price = exit_price
-        raw_pl = 0.0
+        if raw_pl == 0.0:
+            raw_pl = 0.0  # genuinely unknown — keep at 0
     pl_points = (exit_price - entry_price) * direction
     conn = _connect()
     conn.execute(
