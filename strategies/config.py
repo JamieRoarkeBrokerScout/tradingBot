@@ -131,6 +131,7 @@ SCALP_MIN_GAP_MINS   = 5         # 5 min cooldown — re-enter quickly
 SCALP_MAX_AGE_BARS   = 6         # force-close after 30 min
 SCALP_MIN_ATR_PCT    = 0.0002    # skip only if completely flat
 SCALP_CROSS_LOOKBACK = 3         # accept EMA cross within last 3 bars (not just last bar)
+SCALP_MAX_LEVERAGE   = 50.0      # cap: units × price / nav ≤ this (prevents absurd FX sizes)
 
 # ─── OANDA / network ──────────────────────────────────────────────────────────
 OANDA_BACKOFF_BASE       = 1.0

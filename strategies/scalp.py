@@ -204,6 +204,11 @@ class ScalpStrategy(SafeguardsBase):
             tp        = last_close + direction * config.SCALP_TP_ATR_MULT * last_atr
             units     = (nav * config.SCALP_NAV_PCT) / stop_dist if stop_dist > 0 else 0
 
+            # Cap leverage: units × price / nav ≤ SCALP_MAX_LEVERAGE
+            if last_close > 0 and nav > 0:
+                max_units = (nav * config.SCALP_MAX_LEVERAGE) / last_close
+                units = min(units, max_units)
+
             if units <= 0:
                 continue
 
@@ -237,5 +242,17 @@ class ScalpStrategy(SafeguardsBase):
         return oanda_history(self._api, instrument, start, end, config.SCALP_GRANULARITY)
 
     def _nav_safe(self) -> float:
-        from .base import _nav
-        return _nav if _nav > 0 else 200.0   # default to $200 if not yet updated
+        """Read NAV from this strategy's own OANDA account (5-min cache)."""
+        now = _utcnow()
+        if (not hasattr(self, "_scalp_nav_cache")
+                or (now - getattr(self, "_scalp_nav_ts", now)).total_seconds() > 300):
+            try:
+                summary = self._api.get_account_summary()
+                nav = float(summary.get("NAV", summary.get("balance", 0)) or 0)
+                if nav > 0:
+                    self._scalp_nav_cache: float = nav
+                    self._scalp_nav_ts = now
+            except Exception as exc:
+                log.warning("[scalp] NAV fetch failed: %s", exc)
+        cached = getattr(self, "_scalp_nav_cache", 0.0)
+        return cached if cached > 0 else 200.0
