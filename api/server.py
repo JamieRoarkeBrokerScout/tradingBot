@@ -576,9 +576,30 @@ def close_open_trade(trade_key):
     from database.database import delete_open_trade
     from datetime import datetime, timezone
 
-    trades = get_open_trades()
-    trade = next((t for t in trades if t["trade_key"] == trade_key), None)
-    if not trade:
+    all_tokens = get_all_user_tokens(g.user_id)
+    db_trades = get_open_trades()
+    trade = next((t for t in db_trades if t["trade_key"] == trade_key), None)
+
+    # If not in DB, check if it's a live Kraken position (synthesised row)
+    if not trade and trade_key.startswith("crypto:"):
+        inst = trade_key[len("crypto:"):]
+        crypto_row = all_tokens.get("crypto")
+        if crypto_row and crypto_row.get("oanda_account_type", "") in ("kraken_futures", "kraken_futures_demo"):
+            try:
+                from strategies.brokers.kraken_futures import KrakenFuturesBroker
+                broker = KrakenFuturesBroker(
+                    api_key=crypto_row["oanda_account_id"],
+                    api_secret=crypto_row["oanda_access_token"],
+                    use_demo=(crypto_row["oanda_account_type"] == "kraken_futures_demo"),
+                )
+                ok = broker.close_trade(inst, 0)
+                try:
+                    _, _, exit_price = broker.get_prices(inst)
+                except Exception:
+                    exit_price = 0.0
+                return jsonify({"status": "closed" if ok else "attempted", "trade_key": trade_key})
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
         return jsonify({"error": "Trade not found"}), 404
 
     strategy   = trade["strategy"]
@@ -588,7 +609,6 @@ def close_open_trade(trade_key):
     # Get credentials — prefer the strategy's own account, fall back to any
     row = get_user_token(g.user_id, strategy)
     if not row:
-        all_tokens = get_all_user_tokens(g.user_id)
         row = next(iter(all_tokens.values()), None)
     if not row:
         return jsonify({"error": "No credentials configured"}), 400
@@ -686,6 +706,47 @@ def close_open_trade(trade_key):
             return jsonify({"status": "removed_stale", "trade_key": trade_key})
 
         return jsonify({"error": f"OANDA {resp.status_code}: {err_text[:300]}"}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Emergency Kraken close — bypasses DB, closes any live position by instrument
+# ---------------------------------------------------------------------------
+
+@app.route("/api/kraken/close/<string:instrument>", methods=["POST"])
+@require_auth
+def kraken_force_close(instrument):
+    """Force-close a live Kraken Futures position by instrument name (e.g. SOL_USD).
+    Cancels all bracket orders first, then sends a market close order.
+    Works even if the position is not recorded in the local DB."""
+    all_tokens = get_all_user_tokens(g.user_id)
+    crypto_row = all_tokens.get("crypto")
+    if not crypto_row or not crypto_row.get("oanda_access_token"):
+        return jsonify({"error": "No Kraken credentials configured"}), 400
+    account_type = crypto_row.get("oanda_account_type", "")
+    if account_type not in ("kraken_futures", "kraken_futures_demo"):
+        return jsonify({"error": "Crypto account is not Kraken Futures"}), 400
+    try:
+        from strategies.brokers.kraken_futures import KrakenFuturesBroker
+        broker = KrakenFuturesBroker(
+            api_key=crypto_row["oanda_account_id"],
+            api_secret=crypto_row["oanda_access_token"],
+            use_demo=(account_type == "kraken_futures_demo"),
+        )
+        ok = broker.close_trade(instrument, 0)
+        # Remove from DB if present
+        from database.database import delete_open_trade
+        try:
+            delete_open_trade(f"crypto:{instrument}")
+        except Exception:
+            pass
+        try:
+            _, _, exit_price = broker.get_prices(instrument)
+        except Exception:
+            exit_price = 0.0
+        return jsonify({"status": "closed" if ok else "attempted",
+                        "instrument": instrument, "exit_price": exit_price})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
