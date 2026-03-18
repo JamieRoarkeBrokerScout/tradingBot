@@ -54,6 +54,7 @@ from database.database import (
     get_open_trades,
     get_strategy_states, upsert_strategy_state,
     record_closed_trade,
+    set_manual_close_cooldown,
 )
 
 # Authorised users — plain passwords are hashed fresh at startup so there
@@ -649,6 +650,7 @@ def close_open_trade(trade_key):
             except Exception:
                 pass
             delete_open_trade(trade_key)
+            set_manual_close_cooldown(instrument, strategy)
             status = "closed" if ok else "removed_stale"
             return jsonify({"status": status, "trade_key": trade_key})
         except Exception as exc:
@@ -693,6 +695,7 @@ def close_open_trade(trade_key):
                 except Exception:
                     pass  # recording failure must not block the close response
                 delete_open_trade(trade_key)
+                set_manual_close_cooldown(instrument, strategy)
                 return jsonify({"status": "closed", "trade_key": trade_key})
             err_text = resp.text or ""
             # If no units in this direction, try the opposite

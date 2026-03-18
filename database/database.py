@@ -130,6 +130,17 @@ def init_db():
         )
     """)
 
+    # ── manual_close_cooldowns: prevent bot re-entering after manual close ────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS manual_close_cooldowns (
+            instrument   TEXT NOT NULL,
+            strategy     TEXT NOT NULL,
+            closed_at    TEXT NOT NULL,
+            cooldown_until TEXT NOT NULL,
+            PRIMARY KEY (instrument, strategy)
+        )
+    """)
+
     # ── Migration: add stop_price / tp_price to open_trades ─────────────────
     cursor.execute("PRAGMA table_info(open_trades)")
     open_trade_cols = [row[1] for row in cursor.fetchall()]
@@ -428,6 +439,40 @@ def get_trades_for_learner(strategy_name: str, limit: int = 200) -> list[dict]:
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Manual-close cooldown helpers
+# ---------------------------------------------------------------------------
+
+def set_manual_close_cooldown(instrument: str, strategy: str, hours: float = 4.0) -> None:
+    """Record that an instrument was manually closed; block re-entry for `hours`."""
+    now = datetime.utcnow()
+    cooldown_until = (now + timedelta(hours=hours)).isoformat()
+    conn = _connect()
+    conn.execute(
+        """INSERT INTO manual_close_cooldowns (instrument, strategy, closed_at, cooldown_until)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(instrument, strategy) DO UPDATE SET
+               closed_at      = excluded.closed_at,
+               cooldown_until = excluded.cooldown_until""",
+        (instrument, strategy, now.isoformat(), cooldown_until),
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_on_manual_cooldown(instrument: str, strategy: str) -> bool:
+    """Return True if this instrument/strategy is still within its manual-close cooldown."""
+    conn = _connect()
+    row = conn.execute(
+        "SELECT cooldown_until FROM manual_close_cooldowns WHERE instrument=? AND strategy=?",
+        (instrument, strategy),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False
+    return row["cooldown_until"] > datetime.utcnow().isoformat()
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ from strategies.brokers.kraken_futures import KrakenFuturesBroker
 from database.database import (
     DB_PATH as _DB_PATH,
     upsert_open_trade, delete_open_trade, get_strategy_states,
+    is_on_manual_cooldown,
 )
 
 logging.basicConfig(
@@ -426,6 +427,11 @@ class Runner:
                         signals = strategy.tick()
 
                     for sig in signals:
+                        action = sig.meta.get("action", "open")
+                        if action == "open" and is_on_manual_cooldown(sig.instrument, name):
+                            log.info("[runner] %s %s skipped — manual close cooldown active",
+                                     name, sig.instrument)
+                            continue
                         if self.approve_signal(strategy, sig):
                             log.info("[runner] → %s %s %+d %.2f units",
                                      sig.strategy, sig.instrument, sig.direction, sig.units)
