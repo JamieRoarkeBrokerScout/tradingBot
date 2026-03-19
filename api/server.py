@@ -633,12 +633,26 @@ def close_open_trade(trade_key):
             )
             units       = float(trade.get("units", 0) or 0)
             entry_price = float(trade.get("entry_price", 0) or 0)
+            # Snapshot balance before close — difference gives exact realised P&L
+            # regardless of whether entry_price in DB is accurate.
+            try:
+                nav_before = float(broker.get_account_summary().get("nav", 0) or 0)
+            except Exception:
+                nav_before = 0.0
             ok = broker.close_trade(instrument, units)
+            try:
+                nav_after = float(broker.get_account_summary().get("nav", 0) or 0)
+            except Exception:
+                nav_after = 0.0
             try:
                 _, _, exit_price = broker.get_prices(instrument)
             except Exception:
                 exit_price = entry_price
-            raw_pl = (exit_price - entry_price) * direction * units if exit_price > 0 and entry_price > 0 else 0
+            # Use nav delta as P&L if both snapshots succeeded; fall back to formula
+            if nav_before > 0 and nav_after > 0:
+                raw_pl = nav_after - nav_before
+            else:
+                raw_pl = (exit_price - entry_price) * direction * units if exit_price > 0 and entry_price > 0 else 0
             try:
                 record_closed_trade(
                     instrument=instrument, direction=direction, units=units,

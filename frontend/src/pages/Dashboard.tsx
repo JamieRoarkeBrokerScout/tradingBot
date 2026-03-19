@@ -730,7 +730,7 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                             <History size={12} /> Trade Archive
                         </h2>
 
-                        <div className="space-y-3 overflow-y-auto pr-1 flex-1">
+                        <div className="space-y-3 overflow-y-auto pr-1 flex-1 min-h-0 max-h-[520px]">
                             {pastTrades.length === 0 ? (
                                 <p className="text-slate-400 text-center py-8 text-sm">No trades yet</p>
                             ) : pastTrades.map(trade => (
