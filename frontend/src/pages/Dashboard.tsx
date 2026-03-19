@@ -474,14 +474,21 @@ export default function Dashboard({ session }: { session: AuthSession }) {
                                 <BarChart3 size={12} /> Account Summary
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                {(['stat_arb', 'momentum', 'vol_premium', 'crypto', 'daily_target'] as const).map(key => {
+                                {(['stat_arb', 'momentum', 'vol_premium', 'crypto', 'daily_target', 'scalp'] as const).map(key => {
                                     const acct = accountData[key];
-                                    if (!acct || acct.error) return null;
+                                    if (!acct) return null;
                                     const LABELS: Record<string, string> = {
                                         stat_arb: 'Stat Arb', momentum: 'Momentum',
                                         vol_premium: 'Vol Premium', crypto: 'Crypto',
-                                        daily_target: 'Daily Target',
+                                        daily_target: 'Daily Target', scalp: 'Scalp',
                                     };
+                                    if (acct.error) return (
+                                        <div key={key} className="bg-white border border-amber-200 rounded-2xl p-4 shadow-sm">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-2">{LABELS[key]}</p>
+                                            <p className="text-[10px] text-amber-600 font-mono">{acct.error}</p>
+                                            <p className="text-[9px] text-slate-400 mt-1">Check API token in Settings</p>
+                                        </div>
+                                    );
                                     const plColor = acct.unrealized_pl >= 0 ? 'text-emerald-600' : 'text-rose-500';
                                     const isDailyTarget = key === 'daily_target';
                                     const dailyPct = isDailyTarget && acct.nav > 0
