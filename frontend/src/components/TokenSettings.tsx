@@ -11,7 +11,7 @@ const BOTS = [
     { key: 'stat_arb',     label: 'Stat Arb',       description: 'Pairs trading on XAU/XAG and SPX/BCO' },
     { key: 'momentum',     label: 'Momentum',        description: 'RSI + volume strategy on SPX and Gold' },
     { key: 'vol_premium',  label: 'Vol Premium',     description: 'Short volatility on SPX500' },
-    { key: 'crypto',       label: 'Crypto',          description: 'RSI momentum on BTC/ETH/SOL via Kraken Futures (use Kraken API key, not OANDA)' },
+    { key: 'crypto',       label: 'Crypto',          description: 'RSI momentum on BTC/ETH/SOL via Kraken Futures. Account ID = Kraken API Key, Access Token = Kraken API Secret. Set type to Kraken Futures.' },
     { key: 'daily_target', label: 'Daily Target',    description: 'M15 RSI + 20MA on EUR, GBP, NAS100, XAU, SPX. Stops at +2% daily P&L.' },
     { key: 'scalp',        label: 'Scalp',           description: '5-min EMA crossover on NAS100, XAU, GBP. ~$200 dedicated OANDA account.' },
 ] as const;
@@ -201,8 +201,10 @@ export default function TokenSettings({ onClose }: Props) {
                             onChange={e => setField('accountType', e.target.value)}
                             className={inputClass}
                         >
-                            <option value="practice">Practice</option>
-                            <option value="live">Live</option>
+                            <option value="practice">OANDA Practice</option>
+                            <option value="live">OANDA Live</option>
+                            <option value="kraken_futures">Kraken Futures (Live)</option>
+                            <option value="kraken_futures_demo">Kraken Futures (Demo)</option>
                         </select>
                     </div>
                 </div>
