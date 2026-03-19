@@ -446,24 +446,26 @@ def open_trades_route():
     oanda_pl:    dict[str, dict[str, float]] = {}
     oanda_price: dict[str, dict[str, float]] = {}
 
-    for strategy in {t["strategy"] for t in trades}:
-        row = all_tokens.get(strategy)
-        if not row or not row.get("oanda_access_token"):
-            continue
-        account_type = row.get("oanda_account_type", "")
-        # Kraken Futures accounts are handled separately below — skip OANDA call
-        if account_type in ("kraken_futures", "kraken_futures_demo"):
-            continue
+    # Fetch OANDA open positions for ALL configured OANDA strategies — not just those
+    # with DB rows — so positions opened before a deploy (e.g. stat_arb legs) still show.
+    oanda_positions: dict[str, list[dict]] = {}   # strategy → list of OANDA trade dicts
+    all_oanda_strategies = [
+        s for s, row in all_tokens.items()
+        if row.get("oanda_access_token") and row.get("oanda_account_type", "") not in ("kraken_futures", "kraken_futures_demo")
+    ]
+    for strategy in all_oanda_strategies:
+        row = all_tokens[strategy]
         try:
-            base = _oanda_base_url(account_type)
+            base = _oanda_base_url(row.get("oanda_account_type", "practice"))
             resp = _requests.get(
                 f"{base}/accounts/{row['oanda_account_id']}/openTrades",
                 headers=_oanda_headers(row["oanda_access_token"]),
                 timeout=5,
             )
             if resp.status_code == 200:
-                oanda_pl[strategy]    = {}
-                oanda_price[strategy] = {}
+                oanda_pl[strategy]        = {}
+                oanda_price[strategy]     = {}
+                oanda_positions[strategy] = []
                 for ot in resp.json().get("trades", []):
                     inst = ot.get("instrument", "")
                     oanda_pl[strategy][inst] = (
@@ -471,6 +473,7 @@ def open_trades_route():
                     )
                     if "price" in ot:
                         oanda_price[strategy][inst] = float(ot["price"])
+                    oanda_positions[strategy].append(ot)
         except Exception:
             pass
 
@@ -511,6 +514,39 @@ def open_trades_route():
                         pass
             except Exception:
                 pass
+
+    # Synthesise virtual rows for OANDA positions not tracked in DB (e.g. stat_arb legs
+    # opened before a deploy, or any trade where DB write failed).
+    tracked_oanda: dict[str, set] = {}
+    for t in trades:
+        if t["strategy"] != "crypto":
+            tracked_oanda.setdefault(t["strategy"], set()).add(t["instrument"])
+    for strategy, oanda_trades in oanda_positions.items():
+        tracked = tracked_oanda.get(strategy, set())
+        for ot in oanda_trades:
+            inst = ot.get("instrument", "")
+            if not inst or inst in tracked:
+                continue
+            raw_units = float(ot.get("currentUnits", 0) or 0)
+            if raw_units == 0:
+                continue
+            direction  = 1 if raw_units > 0 else -1
+            entry_px   = float(ot.get("price", 0) or 0)
+            unreal_pl  = float(ot.get("unrealizedPL", 0) or 0)
+            cur_px     = oanda_price.get(strategy, {}).get(inst, 0.0)
+            trades.append({
+                "trade_key":     f"{strategy}:{inst}",
+                "strategy":      strategy,
+                "instrument":    inst,
+                "direction":     direction,
+                "units":         abs(raw_units),
+                "entry_price":   entry_px,
+                "stop_price":    None,
+                "tp_price":      None,
+                "entry_time":    ot.get("openTime", datetime.now(_tz.utc).isoformat()),
+                "current_price": cur_px if cur_px > 0 else None,
+                "unrealized_pl": unreal_pl,
+            })
 
     # Fall back to mid-price fetch for OANDA strategies where the OANDA call failed
     fallback_instruments = [

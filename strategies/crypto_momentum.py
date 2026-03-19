@@ -136,17 +136,33 @@ class CryptoMomentumStrategy(SafeguardsBase):
             if reason is None and age_days > config.CRYPTO_MAX_AGE_DAYS:
                 reason = "time_exit"
 
-            # RSI cross-back — only fires after min hold period to avoid noise exits
+            # 65%-to-TP reversal exit: if we've reached 65% of the way to TP but price
+            # is now moving sideways/against us (RSI fading), lock in the gain and exit.
             trade.bar_count += 1
             if reason is None and trade.bar_count >= config.CRYPTO_RSI_MIN_HOLD_BARS:
                 try:
                     latest_rsi = self._latest_rsi(inst)
                     rsi_exit_long  = config.CRYPTO_RSI_EXIT          # < 45
                     rsi_exit_short = 100 - config.CRYPTO_RSI_EXIT    # > 55
+
+                    # Standard RSI cross-back exit
                     if trade.direction == +1 and latest_rsi < rsi_exit_long:
                         reason = "rsi_cross"
                     elif trade.direction == -1 and latest_rsi > rsi_exit_short:
                         reason = "rsi_cross"
+
+                    # 65% to TP + momentum fading → exit early and reset
+                    if reason is None and trade.tp_price != trade.entry_price:
+                        tp_dist    = abs(trade.tp_price - trade.entry_price)
+                        gain       = (price - trade.entry_price) * trade.direction
+                        pct_to_tp  = gain / tp_dist if tp_dist > 0 else 0.0
+                        # RSI fading: falling from high (long) or rising from low (short)
+                        momentum_reversing = (
+                            (trade.direction == +1 and latest_rsi < 55) or
+                            (trade.direction == -1 and latest_rsi > 45)
+                        )
+                        if pct_to_tp >= 0.65 and momentum_reversing:
+                            reason = "partial_tp_reversal"
                 except Exception:
                     pass
 

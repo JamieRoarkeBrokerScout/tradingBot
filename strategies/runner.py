@@ -280,7 +280,7 @@ def _record_trade(
                     bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode,
                     strategy_name, entry_metadata, user_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (entry_time, exit_time, instrument, direction, int(units),
+            (entry_time, exit_time, instrument, direction, units,
              entry_price, exit_price, exit_reason,
              pl_points, 0.0, raw_pl,
              None, None, None, None, None, None,
@@ -326,6 +326,7 @@ class Runner:
         # key: f"{strategy_name}:{instrument}"
         self._open_trades: dict[str, dict] = {}
         self._running = True
+        self._load_open_trades_from_db()
 
     def run(self) -> None:
         log.info("Strategy runner started (pid=%d)", os.getpid())
@@ -394,6 +395,11 @@ class Runner:
                                         pass
                                 raw_pl = ((exit_price - entry["entry_price"])
                                           * entry["direction"] * entry["units"])
+                                # Sanity cap: reject impossible P&L (stale oversized units)
+                                kraken_nav = getattr(self._strategies.get("crypto"), "_kraken_nav_cache", 0) or 5000
+                                if abs(raw_pl) > kraken_nav * 3:
+                                    log.error("[runner] Kraken raw_pl=%.2f exceeds 3×nav=%.0f — capping to 0 (stale data)", raw_pl, kraken_nav)
+                                    raw_pl = 0.0
                                 _record_trade(
                                     instrument=entry["instrument"],
                                     direction=entry["direction"],
@@ -544,6 +550,27 @@ class Runner:
             time.sleep(5)
 
         log.info("Strategy runner stopped")
+
+    def _load_open_trades_from_db(self) -> None:
+        """Seed _open_trades from DB so Kraken sync and close-recording survive restarts."""
+        try:
+            from database.database import get_open_trades
+            rows = get_open_trades(user_id=_RUNNER_USER_ID)
+            for row in rows:
+                trade_key = row.get("trade_key") or f"{row['strategy']}:{row['instrument']}"
+                if trade_key not in self._open_trades:
+                    self._open_trades[trade_key] = {
+                        "instrument":     row["instrument"],
+                        "direction":      row["direction"],
+                        "units":          float(row.get("units") or 0),
+                        "entry_price":    float(row.get("entry_price") or 0),
+                        "entry_time":     row.get("entry_time", ""),
+                        "strategy_name":  row["strategy"],
+                        "entry_metadata": None,
+                    }
+            log.info("[runner] loaded %d open trades from DB into memory", len(rows))
+        except Exception:
+            log.exception("[runner] failed to load open trades from DB")
 
     def approve_signal(self, strategy: SafeguardsBase, sig) -> bool:
         """Gate: only approve if action is 'close' (always pass) or approve_trade passes."""

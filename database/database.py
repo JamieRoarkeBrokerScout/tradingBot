@@ -448,7 +448,7 @@ def record_closed_trade(
                 bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode,
                 strategy_name, entry_metadata, user_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (entry_time, exit_time, instrument, direction, int(units),
+        (entry_time, exit_time, instrument, direction, units,
          entry_price, exit_price, exit_reason,
          pl_points, 0.0, raw_pl,
          None, None, None, None, None, None,
