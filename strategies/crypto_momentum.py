@@ -214,17 +214,30 @@ class CryptoMomentumStrategy(SafeguardsBase):
                          inst, atr_pct, config.CRYPTO_MIN_ATR_PCT)
                 continue
 
-            # Require RSI crossover (not just level) — catches momentum building,
-            # not entries when RSI has already been extreme for many bars.
+            # RSI crossover within last CRYPTO_CROSS_LOOKBACK bars
+            lookback = getattr(config, 'CRYPTO_CROSS_LOOKBACK', 3)
+            n = len(rsi_s)
+            rsi_cross_long  = any(
+                rsi_s.iloc[-(i + 2)] <= config.CRYPTO_RSI_LONG
+                and rsi_s.iloc[-(i + 1)] > config.CRYPTO_RSI_LONG
+                for i in range(min(lookback, n - 2))
+            )
+            rsi_cross_short = any(
+                rsi_s.iloc[-(i + 2)] >= config.CRYPTO_RSI_SHORT
+                and rsi_s.iloc[-(i + 1)] < config.CRYPTO_RSI_SHORT
+                for i in range(min(lookback, n - 2))
+            )
+
             direction: Optional[int] = None
-            rsi_cross_long  = prev_rsi <= config.CRYPTO_RSI_LONG  and last_rsi > config.CRYPTO_RSI_LONG
-            rsi_cross_short = prev_rsi >= config.CRYPTO_RSI_SHORT and last_rsi < config.CRYPTO_RSI_SHORT
             if rsi_cross_long and last_close > last_ma:
                 direction = +1
             elif rsi_cross_short and last_close < last_ma:
                 direction = -1
 
             if direction is None:
+                trend = "above" if last_close > last_ma else "below"
+                log.info("[crypto] %s skip: no RSI cross (rsi=%.1f long=%d short=%d ma_trend=%s)",
+                         inst, last_rsi, config.CRYPTO_RSI_LONG, config.CRYPTO_RSI_SHORT, trend)
                 continue
 
             stop_dist = config.CRYPTO_STOP_ATR_MULT * last_atr
