@@ -324,7 +324,8 @@ class Runner:
         self._enabled: dict[str, bool] = {k: False for k in self._strategies}
         # Track open positions so we can record PnL when they close
         # key: f"{strategy_name}:{instrument}"
-        self._open_trades: dict[str, dict] = {}
+        self._open_trades:    dict[str, dict] = {}
+        self._retry_closes:   dict[str, list] = {}   # strategy_name → [Signal, ...]
         self._running = True
         self._load_open_trades_from_db()
 
@@ -424,6 +425,28 @@ class Runner:
                 except Exception:
                     log.exception("[runner] Kraken position sync failed")
 
+            # Retry any failed close signals from the previous tick
+            for strat_name, retry_list in list(self._retry_closes.items()):
+                retry_api = self._apis.get(strat_name, self._default_api)
+                for retry_sig in list(retry_list):
+                    log.info("[runner] retrying failed close for %s %s", strat_name, retry_sig.instrument)
+                    if _submit(retry_api, retry_sig):
+                        retry_list.remove(retry_sig)
+                        trade_key = f"{strat_name}:{retry_sig.instrument}"
+                        entry = self._open_trades.pop(trade_key, {})
+                        if entry:
+                            exit_price = prices.get(retry_sig.instrument, 0.0)
+                            _record_trade(
+                                instrument=entry["instrument"], direction=entry["direction"],
+                                units=entry["units"], entry_price=entry["entry_price"],
+                                exit_price=exit_price, entry_time=entry["entry_time"],
+                                exit_time=datetime.now(timezone.utc).isoformat(),
+                                exit_reason="retry_close", strategy_name=strat_name,
+                                user_id=_RUNNER_USER_ID,
+                            )
+                if not retry_list:
+                    del self._retry_closes[strat_name]
+
             # Tick each enabled strategy, submit signals via its own API connection
             for name, strategy in self._strategies.items():
                 if not self._enabled[name]:
@@ -453,10 +476,14 @@ class Runner:
                                      sig.strategy, sig.instrument, sig.direction, sig.units)
                             submitted = _submit(api, sig)
                             if not submitted:
-                                # Roll back strategy's in-memory state so a
-                                # rejected open doesn't become a phantom trade
                                 if action == "open" and hasattr(strategy, "_trades"):
+                                    # Roll back phantom open
                                     strategy._trades.pop(sig.instrument, None)
+                                elif action == "close":
+                                    # Queue for retry next tick — don't silently drop
+                                    log.warning("[runner] close failed for %s %s — queued for retry",
+                                                name, sig.instrument)
+                                    self._retry_closes.setdefault(name, []).append(sig)
                                 continue
 
                             trade_key = f"{name}:{sig.instrument}"
@@ -552,23 +579,60 @@ class Runner:
         log.info("Strategy runner stopped")
 
     def _load_open_trades_from_db(self) -> None:
-        """Seed _open_trades from DB so Kraken sync and close-recording survive restarts."""
+        """Seed _open_trades AND strategy._trades from DB so exits work after restarts."""
         try:
             from database.database import get_open_trades
             rows = get_open_trades(user_id=_RUNNER_USER_ID)
             for row in rows:
                 trade_key = row.get("trade_key") or f"{row['strategy']}:{row['instrument']}"
+                entry = {
+                    "instrument":     row["instrument"],
+                    "direction":      row["direction"],
+                    "units":          float(row.get("units") or 0),
+                    "entry_price":    float(row.get("entry_price") or 0),
+                    "entry_time":     row.get("entry_time", ""),
+                    "strategy_name":  row["strategy"],
+                    "entry_metadata": None,
+                }
                 if trade_key not in self._open_trades:
-                    self._open_trades[trade_key] = {
-                        "instrument":     row["instrument"],
-                        "direction":      row["direction"],
-                        "units":          float(row.get("units") or 0),
-                        "entry_price":    float(row.get("entry_price") or 0),
-                        "entry_time":     row.get("entry_time", ""),
-                        "strategy_name":  row["strategy"],
-                        "entry_metadata": None,
-                    }
-            log.info("[runner] loaded %d open trades from DB into memory", len(rows))
+                    self._open_trades[trade_key] = entry
+
+                # Restore into strategy's in-memory _trades so _manage_exits fires correctly.
+                # Without this, TP/SL checks never run after a runner restart.
+                strat_name = row["strategy"]
+                strat_obj  = self._strategies.get(strat_name)
+                if strat_obj and hasattr(strat_obj, "_trades"):
+                    inst = row["instrument"]
+                    if inst not in strat_obj._trades:
+                        ep   = float(row.get("entry_price") or 0)
+                        sp   = float(row.get("stop_price") or 0)
+                        tp   = float(row.get("tp_price") or 0)
+                        units = float(row.get("units") or 0)
+                        direction = int(row.get("direction") or 0)
+                        # Build a minimal _Trade-like object using the base dataclass fields
+                        # each strategy shares (instrument, direction, units, entry/stop/tp price)
+                        try:
+                            from strategies.daily_target import _Trade as _DT_Trade
+                            from strategies.crypto_momentum import _Trade as _CM_Trade
+                            from strategies.scalp import _Trade as _SC_Trade
+                            _trade_cls = {
+                                "daily_target": _DT_Trade,
+                                "crypto":       _CM_Trade,
+                                "scalp":        _SC_Trade,
+                            }.get(strat_name)
+                            if _trade_cls:
+                                strat_obj._trades[inst] = _trade_cls(
+                                    instrument=inst,
+                                    direction=direction,
+                                    units=units,
+                                    entry_price=ep,
+                                    stop_price=sp if sp else ep,
+                                    tp_price=tp if tp else ep,
+                                    atr=0.0,
+                                )
+                        except Exception:
+                            pass
+            log.info("[runner] loaded %d open trades from DB into memory (trades restored to strategies)", len(rows))
         except Exception:
             log.exception("[runner] failed to load open trades from DB")
 
