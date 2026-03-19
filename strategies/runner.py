@@ -42,8 +42,11 @@ from strategies.brokers.kraken_futures import KrakenFuturesBroker
 from database.database import (
     DB_PATH as _DB_PATH,
     upsert_open_trade, delete_open_trade, get_strategy_states,
-    is_on_manual_cooldown,
+    is_on_manual_cooldown, set_manual_close_cooldown, upsert_strategy_state,
 )
+
+# Set from env in main(); default 1 for backward compat
+_RUNNER_USER_ID: int = 1
 
 logging.basicConfig(
     level=logging.INFO,
@@ -240,7 +243,7 @@ def _submit(api, sig) -> bool:
 
 def _load_state() -> dict:
     try:
-        return get_strategy_states()
+        return get_strategy_states(_RUNNER_USER_ID)
     except Exception:
         return {"stat_arb": {"enabled": False}, "momentum": {"enabled": False}, "vol_premium": {"enabled": False}}
 
@@ -258,6 +261,7 @@ def _record_trade(
     exit_reason: str,
     strategy_name: str = "",
     entry_metadata: str | None = None,
+    user_id: int = 1,
 ) -> None:
     """Write a completed trade to the dashboard's SQLite database."""
     if exit_price <= 0:
@@ -274,13 +278,13 @@ def _record_trade(
                     entry_price, exit_price, exit_reason,
                     pl_points, pl_R, raw_pl,
                     bar_length, momentum, threshold_k, per_trade_sl, per_trade_tp, trailing_mode,
-                    strategy_name, entry_metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    strategy_name, entry_metadata, user_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (entry_time, exit_time, instrument, direction, int(units),
              entry_price, exit_price, exit_reason,
              pl_points, 0.0, raw_pl,
              None, None, None, None, None, None,
-             strategy_name or None, entry_metadata),
+             strategy_name or None, entry_metadata, user_id),
         )
         conn.commit()
         conn.close()
@@ -401,6 +405,7 @@ class Runner:
                                     exit_reason="exchange_sl_tp",
                                     strategy_name=entry.get("strategy_name", ""),
                                     entry_metadata=entry.get("entry_metadata"),
+                                    user_id=_RUNNER_USER_ID,
                                 )
                                 strat_obj = self._strategies.get("crypto")
                                 if strat_obj:
@@ -428,7 +433,7 @@ class Runner:
 
                     for sig in signals:
                         action = sig.meta.get("action", "open")
-                        if action == "open" and is_on_manual_cooldown(sig.instrument, name):
+                        if action == "open" and is_on_manual_cooldown(sig.instrument, name, _RUNNER_USER_ID):
                             log.info("[runner] %s %s skipped — manual close cooldown active",
                                      name, sig.instrument)
                             continue
@@ -482,6 +487,7 @@ class Runner:
                                         entry_time=now_str,
                                         stop_price=sig.stop_price if sig.stop_price else None,
                                         tp_price=sig.tp_price if sig.tp_price else None,
+                                        user_id=_RUNNER_USER_ID,
                                     )
                                 except Exception:
                                     log.exception("[runner] failed to persist open trade %s", trade_key)
@@ -518,6 +524,7 @@ class Runner:
                                         exit_reason=sig.meta.get("reason", "close"),
                                         strategy_name=entry.get("strategy_name", ""),
                                         entry_metadata=entry.get("entry_metadata"),
+                                        user_id=_RUNNER_USER_ID,
                                     )
                                     # Update safeguard counters — record_fill updates _daily_pnl + consec_loss
                                     if entry["entry_price"] > 0 and exit_price > 0:
@@ -563,6 +570,9 @@ def _make_cfg_file(account_id: str, access_token: str, account_type: str) -> str
 
 
 def main() -> None:
+    global _RUNNER_USER_ID
+    _RUNNER_USER_ID = int(os.environ.get("RUNNER_USER_ID", "1"))
+
     parser = argparse.ArgumentParser(description="Strategy runner")
     parser.add_argument("--creds", required=True,
                         help="Path to JSON file with per-strategy OANDA credentials")

@@ -43,8 +43,8 @@ _DEFAULT_STRATEGY_STATE = {
     "scalp":         {"enabled": False},
 }
 
-# Global strategy runner process
-strategy_runner_process = None
+# Per-user strategy runner processes
+_runners: dict[int, subprocess.Popen] = {}
 
 from database.database import (
     DB_PATH,
@@ -55,6 +55,7 @@ from database.database import (
     get_strategy_states, upsert_strategy_state,
     record_closed_trade,
     set_manual_close_cooldown,
+    create_user,
 )
 
 # Authorised users — plain passwords are hashed fresh at startup so there
@@ -72,7 +73,6 @@ SEED_USERS = [
 # Global bot state
 bot_process = None
 current_config = None
-bot_owner_user_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +143,23 @@ def auth_session():
         "user_id": session["user_id"],
         "email": session["email"],
     })
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+    try:
+        user = create_user(email, password)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 409
+    token = create_session(user["id"], user["email"])
+    return jsonify({"token": token, "email": user["email"], "user_id": user["id"]}), 201
 
 
 # ---------------------------------------------------------------------------
@@ -295,23 +312,25 @@ def is_bot_running():
     return bot_process is not None and bot_process.poll() is None
 
 
-def is_runner_running():
-    global strategy_runner_process
-    return strategy_runner_process is not None and strategy_runner_process.poll() is None
+def is_runner_running(user_id: int | None = None):
+    if user_id is not None:
+        proc = _runners.get(user_id)
+        return proc is not None and proc.poll() is None
+    # Legacy: check if any runner is alive
+    return any(p.poll() is None for p in _runners.values())
 
 
-def _load_strategy_state() -> dict:
-    return get_strategy_states()
+def _load_strategy_state(user_id: int = 1) -> dict:
+    return get_strategy_states(user_id)
 
 
-def _save_strategy_state(state: dict) -> None:
+def _save_strategy_state(state: dict, user_id: int = 1) -> None:
     for name, val in state.items():
-        upsert_strategy_state(name, bool(val.get("enabled", False)))
+        upsert_strategy_state(name, bool(val.get("enabled", False)), user_id)
 
 
 def _start_runner(user_id: int) -> None:
-    global strategy_runner_process
-    if is_runner_running():
+    if is_runner_running(user_id):
         return
 
     creds_map = _build_creds_map(user_id)
@@ -331,30 +350,37 @@ def _start_runner(user_id: int) -> None:
         sys.executable, "-u", str(STRATEGY_RUNNER),
         "--creds", creds_file.name,
     ]
-    strategy_runner_process = subprocess.Popen(
+    proc = subprocess.Popen(
         cmd,
         cwd=str(_project_root),
-        env={**os.environ, "PYTHONPATH": str(_project_root), "PYTHONUNBUFFERED": "1"},
+        env={**os.environ, "PYTHONPATH": str(_project_root), "PYTHONUNBUFFERED": "1",
+             "RUNNER_USER_ID": str(user_id)},
     )
-    print(f"Strategy runner started (PID {strategy_runner_process.pid})")
+    _runners[user_id] = proc
+    print(f"Strategy runner started (PID {proc.pid}) for user_id={user_id}")
 
 
-def _stop_runner() -> None:
-    global strategy_runner_process
-    if not is_runner_running():
-        strategy_runner_process = None
-        return
-    try:
-        strategy_runner_process.send_signal(signal.SIGTERM)
+def _stop_runner(user_id: int | None = None) -> None:
+    if user_id is not None:
+        proc = _runners.get(user_id)
+        if proc is None or proc.poll() is not None:
+            _runners.pop(user_id, None)
+            return
         try:
-            strategy_runner_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            strategy_runner_process.kill()
-            strategy_runner_process.wait()
-    except Exception:
-        pass
-    strategy_runner_process = None
-    print("Strategy runner stopped")
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        except Exception:
+            pass
+        _runners.pop(user_id, None)
+        print(f"Strategy runner stopped for user_id={user_id}")
+    else:
+        # Stop all runners (legacy path)
+        for uid in list(_runners.keys()):
+            _stop_runner(uid)
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +434,7 @@ def _fetch_oanda_prices(row: dict, instruments: list[str]) -> dict[str, float]:
 @require_auth
 def open_trades_route():
     from datetime import datetime, timezone as _tz
-    trades = get_open_trades()
+    trades = get_open_trades(g.user_id)
     # Don't return early — Kraken may have live positions not yet in DB
 
     all_tokens = get_all_user_tokens(g.user_id)
@@ -584,7 +610,7 @@ def close_open_trade(trade_key):
     from datetime import datetime, timezone
 
     all_tokens = get_all_user_tokens(g.user_id)
-    db_trades = get_open_trades()
+    db_trades = get_open_trades(g.user_id)
     trade = next((t for t in db_trades if t["trade_key"] == trade_key), None)
 
     # If not in DB, check if it's a live Kraken position (synthesised row)
@@ -660,11 +686,12 @@ def close_open_trade(trade_key):
                     entry_time=trade.get("entry_time", ""),
                     exit_time=datetime.now(timezone.utc).isoformat(),
                     exit_reason="manual_close", raw_pl=raw_pl, strategy_name=strategy,
+                    user_id=g.user_id,
                 )
             except Exception:
                 pass
             delete_open_trade(trade_key)
-            set_manual_close_cooldown(instrument, strategy)
+            set_manual_close_cooldown(instrument, strategy, user_id=g.user_id)
             status = "closed" if ok else "removed_stale"
             return jsonify({"status": status, "trade_key": trade_key})
         except Exception as exc:
@@ -705,11 +732,12 @@ def close_open_trade(trade_key):
                         exit_reason="manual_close",
                         raw_pl=raw_pl,
                         strategy_name=strategy,
+                        user_id=g.user_id,
                     )
                 except Exception:
                     pass  # recording failure must not block the close response
                 delete_open_trade(trade_key)
-                set_manual_close_cooldown(instrument, strategy)
+                set_manual_close_cooldown(instrument, strategy, user_id=g.user_id)
                 return jsonify({"status": "closed", "trade_key": trade_key})
             err_text = resp.text or ""
             # If no units in this direction, try the opposite
@@ -861,7 +889,7 @@ def get_account():
 def get_trades():
     conn = _get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM trades ORDER BY exit_time DESC LIMIT 1000")
+    cursor.execute("SELECT * FROM trades WHERE user_id = ? ORDER BY exit_time DESC LIMIT 1000", (g.user_id,))
     trades = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return jsonify(trades)
@@ -879,8 +907,8 @@ def get_stats():
             SUM(CASE WHEN raw_pl > 0 THEN 1 ELSE 0 END) as wins,
             SUM(CASE WHEN raw_pl < 0 THEN 1 ELSE 0 END) as losses
         FROM trades
-        WHERE DATE(exit_time) = DATE('now')
-    """)
+        WHERE DATE(exit_time) = DATE('now') AND user_id = ?
+    """, (g.user_id,))
     today = dict(cursor.fetchone())
 
     cursor.execute("""
@@ -894,7 +922,8 @@ def get_stats():
             COALESCE(AVG(CASE WHEN raw_pl > 0 THEN raw_pl END), 0) as avg_win,
             COALESCE(AVG(CASE WHEN raw_pl < 0 THEN raw_pl END), 0) as avg_loss
         FROM trades
-    """)
+        WHERE user_id = ?
+    """, (g.user_id,))
     alltime = dict(cursor.fetchone())
 
     cursor.execute("""
@@ -904,18 +933,18 @@ def get_stats():
             SUM(CASE WHEN raw_pl > 0 THEN 1 ELSE 0 END) as wins,
             SUM(CASE WHEN raw_pl < 0 THEN 1 ELSE 0 END) as losses
         FROM trades
-        WHERE strategy_name IS NOT NULL
+        WHERE strategy_name IS NOT NULL AND user_id = ?
         GROUP BY strategy_name
-    """)
+    """, (g.user_id,))
     by_strategy = {row["strategy_name"]: dict(row) for row in cursor.fetchall()}
 
     cursor.execute("""
         SELECT strategy_name,
             COALESCE(SUM(raw_pl), 0) as pl_today
         FROM trades
-        WHERE strategy_name IS NOT NULL AND DATE(exit_time) = DATE('now')
+        WHERE strategy_name IS NOT NULL AND DATE(exit_time) = DATE('now') AND user_id = ?
         GROUP BY strategy_name
-    """)
+    """, (g.user_id,))
     today_by_strategy = {row["strategy_name"]: row["pl_today"] for row in cursor.fetchall()}
 
     conn.close()
@@ -935,7 +964,7 @@ def get_stats():
 @app.route("/api/bot/start", methods=["POST"])
 @require_auth
 def start_bot():
-    global bot_process, current_config, bot_owner_user_id
+    global bot_process, current_config
 
     if is_bot_running():
         return jsonify({"error": "Bot is already running", "pid": bot_process.pid}), 400
@@ -979,7 +1008,6 @@ def start_bot():
 
         bot_process = subprocess.Popen(cmd, cwd=str(BOT_SCRIPT.parent.parent))
         current_config = data
-        bot_owner_user_id = g.user_id
 
         print(f"Bot started (PID {bot_process.pid}) for user {g.user_email}")
         return jsonify({"status": "started", "pid": bot_process.pid, "config": data})
@@ -991,7 +1019,7 @@ def start_bot():
 @app.route("/api/bot/stop", methods=["POST"])
 @require_auth
 def stop_bot():
-    global bot_process, current_config, bot_owner_user_id
+    global bot_process, current_config
 
     if not is_bot_running():
         bot_process = None
@@ -1007,7 +1035,6 @@ def stop_bot():
 
         bot_process = None
         current_config = None
-        bot_owner_user_id = None
         return jsonify({"status": "stopped"})
 
     except Exception as e:
@@ -1043,9 +1070,9 @@ VALID_STRATEGIES = {"stat_arb", "momentum", "vol_premium", "crypto", "daily_targ
 @app.route("/api/strategies", methods=["GET"])
 @require_auth
 def get_strategies():
-    state = _load_strategy_state()
+    state = _load_strategy_state(g.user_id)
     return jsonify({
-        "runner_running": is_runner_running(),
+        "runner_running": is_runner_running(g.user_id),
         "strategies": state,
     })
 
@@ -1056,10 +1083,10 @@ def toggle_strategy(name):
     if name not in VALID_STRATEGIES:
         return jsonify({"error": f"Unknown strategy: {name}"}), 400
 
-    state       = _load_strategy_state()
+    state       = _load_strategy_state(g.user_id)
     new_enabled = not state.get(name, {}).get("enabled", False)
     state[name] = {"enabled": new_enabled}
-    _save_strategy_state(state)
+    _save_strategy_state(state, g.user_id)
 
     any_enabled = any(v.get("enabled") for v in state.values())
 
@@ -1069,21 +1096,21 @@ def toggle_strategy(name):
         except Exception as exc:
             # Revert the state change and surface the error to the UI
             state[name] = {"enabled": False}
-            _save_strategy_state(state)
+            _save_strategy_state(state, g.user_id)
             return jsonify({
                 "error":          str(exc),
                 "strategy":       name,
                 "enabled":        False,
-                "runner_running": is_runner_running(),
+                "runner_running": is_runner_running(g.user_id),
                 "strategies":     state,
             }), 400
     elif not any_enabled:
-        _stop_runner()
+        _stop_runner(g.user_id)
 
     return jsonify({
         "strategy":       name,
         "enabled":        new_enabled,
-        "runner_running": is_runner_running(),
+        "runner_running": is_runner_running(g.user_id),
         "strategies":     state,
     })
 
@@ -1091,11 +1118,11 @@ def toggle_strategy(name):
 @app.route("/api/strategies/runner/stop", methods=["POST"])
 @require_auth
 def stop_all_strategies():
-    state = _load_strategy_state()
+    state = _load_strategy_state(g.user_id)
     for name in state:
         state[name] = {"enabled": False}
-    _save_strategy_state(state)
-    _stop_runner()
+    _save_strategy_state(state, g.user_id)
+    _stop_runner(g.user_id)
     return jsonify({"status": "stopped"})
 
 
@@ -1128,21 +1155,20 @@ seed_tokens_from_env()
 
 # Auto-restart runner if strategies were enabled before this deploy
 def _autostart_runner():
-    state = get_strategy_states()
-    if not any(v.get("enabled") for v in state.values()):
-        return
-    # Find the first user who has tokens configured
     for email, _ in _USER_ENV_PREFIX.items():
         user = get_user_by_email(email)
         if not user:
             continue
-        if _build_creds_map(user["id"]):
+        uid = user["id"]
+        state = get_strategy_states(uid)
+        if not any(v.get("enabled") for v in state.values()):
+            continue
+        if _build_creds_map(uid):
             try:
-                _start_runner(user["id"])
+                _start_runner(uid)
                 print(f"[autostart] runner restarted for {email}")
             except Exception as exc:
-                print(f"[autostart] failed to restart runner: {exc}")
-            return
+                print(f"[autostart] failed to restart runner for {email}: {exc}")
 
 _autostart_runner()
 

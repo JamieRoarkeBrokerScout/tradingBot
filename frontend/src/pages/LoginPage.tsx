@@ -1,28 +1,47 @@
 import { useState, FormEvent } from 'react';
-import { login, type AuthSession } from '../auth';
+import { login, register, type AuthSession } from '../auth';
 
 interface Props {
     onLogin: (session: AuthSession) => void;
 }
 
 export default function LoginPage({ onLogin }: Props) {
+    const [mode, setMode] = useState<'signin' | 'register'>('signin');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    const isRegister = mode === 'register';
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setError('');
+
+        if (isRegister && password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
         setLoading(true);
         try {
-            const session = await login(email.trim(), password);
+            const session = isRegister
+                ? await register(email.trim(), password)
+                : await login(email.trim(), password);
             onLogin(session);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Login failed');
+            setError(err instanceof Error ? err.message : isRegister ? 'Registration failed' : 'Login failed');
         } finally {
             setLoading(false);
         }
+    };
+
+    const switchMode = () => {
+        setMode(isRegister ? 'signin' : 'register');
+        setError('');
+        setPassword('');
+        setConfirmPassword('');
     };
 
     return (
@@ -39,8 +58,12 @@ export default function LoginPage({ onLogin }: Props) {
             <main className="flex-1 flex items-center justify-center px-4">
                 <div className="w-full max-w-sm">
                     <div className="mb-8 text-center">
-                        <h1 className="text-2xl font-black text-white mb-1">Welcome back</h1>
-                        <p className="text-white/50 text-sm">Sign in to your trading dashboard</p>
+                        <h1 className="text-2xl font-black text-white mb-1">
+                            {isRegister ? 'Create account' : 'Welcome back'}
+                        </h1>
+                        <p className="text-white/50 text-sm">
+                            {isRegister ? 'Set up your trading dashboard' : 'Sign in to your trading dashboard'}
+                        </p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 shadow-2xl space-y-4">
@@ -63,11 +86,26 @@ export default function LoginPage({ onLogin }: Props) {
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 required
-                                autoComplete="current-password"
+                                autoComplete={isRegister ? 'new-password' : 'current-password'}
                                 placeholder="••••••••"
                                 className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-emerald-400/60 focus:bg-white/15 transition-all"
                             />
                         </div>
+
+                        {isRegister && (
+                            <div>
+                                <label className="block text-[10px] text-white/60 font-bold uppercase tracking-wider mb-1.5">Confirm Password</label>
+                                <input
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={e => setConfirmPassword(e.target.value)}
+                                    required
+                                    autoComplete="new-password"
+                                    placeholder="••••••••"
+                                    className="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-emerald-400/60 focus:bg-white/15 transition-all"
+                                />
+                            </div>
+                        )}
 
                         {error && (
                             <p className="text-rose-300 text-xs bg-rose-500/20 border border-rose-400/30 rounded-lg px-3 py-2">
@@ -80,8 +118,22 @@ export default function LoginPage({ onLogin }: Props) {
                             disabled={loading}
                             className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-white/10 disabled:text-white/30 text-white font-bold py-3 rounded-xl transition-all text-sm uppercase tracking-wider shadow-lg shadow-emerald-900/50"
                         >
-                            {loading ? 'Signing in...' : 'Sign in'}
+                            {loading
+                                ? (isRegister ? 'Creating account...' : 'Signing in...')
+                                : (isRegister ? 'Create account' : 'Sign in')}
                         </button>
+
+                        <div className="text-center pt-1">
+                            <button
+                                type="button"
+                                onClick={switchMode}
+                                className="text-white/40 hover:text-white/70 text-xs transition-colors"
+                            >
+                                {isRegister
+                                    ? 'Already have an account? Sign in'
+                                    : "Don't have an account? Create one"}
+                            </button>
+                        </div>
                     </form>
                 </div>
             </main>

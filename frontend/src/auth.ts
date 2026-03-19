@@ -52,6 +52,24 @@ export async function login(email: string, password: string): Promise<AuthSessio
     return { user_id: data.user_id, email: data.email };
 }
 
+/** Register a new account. Returns session on success, throws on failure. */
+export async function register(email: string, password: string): Promise<AuthSession> {
+    const resp = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+
+    if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.error || 'Registration failed');
+    }
+
+    const data = await resp.json();
+    localStorage.setItem(TOKEN_KEY, data.token);
+    return { user_id: data.user_id, email: data.email };
+}
+
 /** Log out and clear stored token. */
 export async function logout(): Promise<void> {
     const token = getStoredToken();
