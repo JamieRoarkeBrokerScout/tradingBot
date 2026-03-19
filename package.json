@@ -3,12 +3,10 @@
   "version": "1.0.0",
   "description": "Automated momentum trading bot with dashboard",
   "scripts": {
-    "dev": "concurrently \"npm run api\" \"npm run frontend\"",
-    "api": "python3 api/server.py",
+    "dev": "concurrently --names API,UI --prefix-colors cyan,magenta \"npm run api\" \"npm run frontend\"",
+    "api": "python3 -m api.server",
     "frontend": "cd frontend && npm run dev",
-    "install-frontend": "cd frontend && npm install",
-    "install-python": "pip3 install -r requirements.txt",
-    "setup": "npm run install-python && npm run install-frontend",
+    "install": "pip3 install -r requirements.txt && cd frontend && npm install",
     "build": "cd frontend && npm run build"
   },
   "dependencies": {
