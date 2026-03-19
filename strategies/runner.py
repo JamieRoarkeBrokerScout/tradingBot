@@ -447,6 +447,10 @@ class Runner:
                                      sig.strategy, sig.instrument, sig.direction, sig.units)
                             submitted = _submit(api, sig)
                             if not submitted:
+                                # Roll back strategy's in-memory state so a
+                                # rejected open doesn't become a phantom trade
+                                if action == "open" and hasattr(strategy, "_trades"):
+                                    strategy._trades.pop(sig.instrument, None)
                                 continue
 
                             trade_key = f"{name}:{sig.instrument}"
