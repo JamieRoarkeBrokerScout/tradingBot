@@ -388,7 +388,10 @@ class KrakenFuturesBroker:
         signing_path = endpoint.replace("/derivatives", "", 1)
 
         try:
-            secret_bytes = base64.b64decode(self._secret.strip())
+            # Add standard base64 padding if the key length isn't a multiple of 4
+            _secret = self._secret.strip()
+            _secret += '=' * (-len(_secret) % 4)
+            secret_bytes = base64.b64decode(_secret)
         except Exception as e:
             log.error("[kraken_futures] base64 decode failed: %s", e)
             secret_bytes = self._secret.strip().encode("utf-8")

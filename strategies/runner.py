@@ -467,11 +467,12 @@ class Runner:
                                      name, sig.instrument)
                             continue
                         if self.approve_signal(strategy, sig):
-                            # OANDA CFD min is 1 unit — skip fractional orders for non-FX
+                            # OANDA CFD min is 1 unit — round up fractional orders; let
+                            # OANDA reject with INSUFFICIENT_MARGIN if account is too small
                             if not isinstance(api, KrakenFuturesBroker) and sig.units < 1.0:
-                                log.warning("[runner] %s %s skip: units=%.4f below OANDA minimum (1.0)",
-                                            name, sig.instrument, sig.units)
-                                continue
+                                log.info("[runner] %s %s units=%.4f rounded up to 1.0 (OANDA minimum)",
+                                         name, sig.instrument, sig.units)
+                                sig.units = 1.0
                             log.info("[runner] → %s %s %+d %.2f units",
                                      sig.strategy, sig.instrument, sig.direction, sig.units)
                             submitted = _submit(api, sig)
