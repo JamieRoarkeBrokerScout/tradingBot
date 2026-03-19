@@ -633,6 +633,42 @@ class Runner:
                                 )
                         except Exception:
                             pass
+
+            # Restore stat_arb _open dict — prevents re-entry of open pairs after restart
+            try:
+                from strategies.stat_arb import _Leg, _Position
+                stat_arb_obj = self._strategies.get("stat_arb")
+                if stat_arb_obj and hasattr(stat_arb_obj, "_open"):
+                    # Collect open stat_arb instruments from DB rows
+                    sa_rows = {row["instrument"]: row for row in rows if row["strategy"] == "stat_arb"}
+                    for inst_a, inst_b in config.STAT_ARB_PAIRS:
+                        pair_key = f"{inst_a}/{inst_b}"
+                        if pair_key in stat_arb_obj._open:
+                            continue
+                        row_a = sa_rows.get(inst_a)
+                        row_b = sa_rows.get(inst_b)
+                        if row_a and row_b:
+                            stat_arb_obj._open[pair_key] = _Position(
+                                pair_key=pair_key,
+                                leg_a=_Leg(
+                                    instrument=inst_a,
+                                    units=float(row_a.get("units") or 0),
+                                    direction=int(row_a.get("direction") or 0),
+                                    entry_price=float(row_a.get("entry_price") or 0),
+                                    stop_price=float(row_a.get("stop_price") or 0),
+                                ),
+                                leg_b=_Leg(
+                                    instrument=inst_b,
+                                    units=float(row_b.get("units") or 0),
+                                    direction=int(row_b.get("direction") or 0),
+                                    entry_price=float(row_b.get("entry_price") or 0),
+                                    stop_price=float(row_b.get("stop_price") or 0),
+                                ),
+                            )
+                            log.info("[runner] restored stat_arb position %s from DB", pair_key)
+            except Exception:
+                log.exception("[runner] failed to restore stat_arb _open from DB")
+
             log.info("[runner] loaded %d open trades from DB into memory (trades restored to strategies)", len(rows))
         except Exception:
             log.exception("[runner] failed to load open trades from DB")
