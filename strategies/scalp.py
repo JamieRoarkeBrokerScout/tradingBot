@@ -175,25 +175,13 @@ class ScalpStrategy(SafeguardsBase):
                 log.debug("[scalp] %s skip: ATR too low (%.4f)", inst, atr_pct)
                 continue
 
-            # Detect EMA crossover within last SCALP_CROSS_LOOKBACK bars
-            # (not just the final bar) so a recent cross still triggers entry
-            lookback = getattr(config, 'SCALP_CROSS_LOOKBACK', 3)
-            n = len(ema_fast)
-            bullish_cross = any(
-                ema_fast.iloc[-(i + 2)] <= ema_slow.iloc[-(i + 2)]
-                and ema_fast.iloc[-(i + 1)] > ema_slow.iloc[-(i + 1)]
-                for i in range(min(lookback, n - 2))
-            )
-            bearish_cross = any(
-                ema_fast.iloc[-(i + 2)] >= ema_slow.iloc[-(i + 2)]
-                and ema_fast.iloc[-(i + 1)] < ema_slow.iloc[-(i + 1)]
-                for i in range(min(lookback, n - 2))
-            )
-
+            # EMA alignment entry: fast above slow = bullish, below = bearish.
+            # Simpler than strict crossover — catches signals throughout a trend,
+            # not just at the exact moment of the cross.
             direction: Optional[int] = None
-            if bullish_cross and last_rsi > config.SCALP_RSI_LONG:
+            if ema_f_now > ema_s_now and last_rsi > config.SCALP_RSI_LONG:
                 direction = +1
-            elif bearish_cross and last_rsi < config.SCALP_RSI_SHORT:
+            elif ema_f_now < ema_s_now and last_rsi < config.SCALP_RSI_SHORT:
                 direction = -1
 
             if direction is None:
