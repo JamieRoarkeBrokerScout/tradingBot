@@ -183,12 +183,25 @@ def _submit(api, sig) -> bool:
             # Call the underlying v20 context directly to get the full response.
             # positionFill=OPEN_ONLY prevents OANDA cancelling orders for FX/CFD
             # pairs where DEFAULT fill would attempt to close an opposing position.
-            request = api.ctx.order.market(
-                api.account_id,
-                instrument=sig.instrument,
-                units=oanda_units,
-                positionFill="OPEN_ONLY",
-            )
+            order_kwargs: dict = {
+                "instrument":    sig.instrument,
+                "units":         oanda_units,
+                "positionFill":  "OPEN_ONLY",
+            }
+            # Attach native OANDA TP/SL so the position closes at exchange level
+            # even if the bot is between polls (60s for scalp). If OANDA fires
+            # them, the bot's next close attempt hits NO_UNITS_TO_CLOSEOUT → handled.
+            if sig.tp_price and sig.tp_price > 0:
+                order_kwargs["takeProfitOnFill"] = {
+                    "price": "{:.5f}".format(sig.tp_price),
+                    "timeInForce": "GTC",
+                }
+            if sig.stop_price and sig.stop_price > 0:
+                order_kwargs["stopLossOnFill"] = {
+                    "price": "{:.5f}".format(sig.stop_price),
+                    "timeInForce": "GTC",
+                }
+            request = api.ctx.order.market(api.account_id, **order_kwargs)
             body = request.body
             status = request.status
             log.info("[runner] OANDA status=%s body=%s", status, body)

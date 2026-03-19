@@ -72,8 +72,7 @@ class ScalpStrategy(SafeguardsBase):
         signals: list[Signal] = []
         try:
             prices = current_prices or {}
-            if prices:
-                signals += self._manage_exits(prices)
+            signals += self._manage_exits(prices)
             signals += self._scan_entries()
         except Exception:
             log.exception("[scalp] unhandled exception in tick()")
@@ -85,22 +84,22 @@ class ScalpStrategy(SafeguardsBase):
         signals = []
         for inst, trade in list(self._trades.items()):
             price = prices.get(inst)
-            if price is None:
-                continue
 
+            # Always increment bar_count so age exit fires even when price feed is down
             trade.bar_count += 1
             reason: Optional[str] = None
 
-            if trade.direction == +1:
-                if price <= trade.stop_price:
-                    reason = "stop_loss"
-                elif price >= trade.tp_price:
-                    reason = "take_profit"
-            else:
-                if price >= trade.stop_price:
-                    reason = "stop_loss"
-                elif price <= trade.tp_price:
-                    reason = "take_profit"
+            if price is not None:
+                if trade.direction == +1:
+                    if price <= trade.stop_price:
+                        reason = "stop_loss"
+                    elif price >= trade.tp_price:
+                        reason = "take_profit"
+                else:
+                    if price >= trade.stop_price:
+                        reason = "stop_loss"
+                    elif price <= trade.tp_price:
+                        reason = "take_profit"
 
             if reason is None and trade.bar_count >= config.SCALP_MAX_AGE_BARS:
                 reason = "time_exit"
