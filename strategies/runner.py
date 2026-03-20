@@ -86,7 +86,33 @@ def _get_mid_prices(api) -> dict[str, float]:
 
 
 def _get_nav(api) -> float:
+    """Return account NAV normalised to USD.
+    OANDA accounts may be denominated in CAD, EUR, etc. — we convert to USD
+    so that all strategy sizing is consistent regardless of account currency.
+    """
     try:
+        # tpqoa (OANDA) path: use the v20 ctx to get balance + currency
+        if hasattr(api, "ctx") and hasattr(api, "account_id"):
+            resp = api.ctx.account.summary(api.account_id)
+            if resp.status == 200:
+                acct     = resp.body["account"]
+                nav      = float(getattr(acct, "NAV", getattr(acct, "balance", 100_000)))
+                currency = getattr(acct, "currency", "USD")
+                if currency != "USD" and nav > 0:
+                    # Convert to USD using a live mid price from OANDA
+                    # e.g. for CAD: fetch USD_CAD and divide balance by that rate
+                    pair = f"USD_{currency}"
+                    try:
+                        _, _, rate = api.get_bid_ask_spread(pair)
+                        if rate and rate > 0:
+                            nav = nav / rate
+                    except Exception:
+                        # Fallback: conservative static rates
+                        _RATES = {"CAD": 0.72, "EUR": 1.08, "GBP": 1.25,
+                                  "AUD": 0.64, "CHF": 1.10, "JPY": 0.0067}
+                        nav = nav * _RATES.get(currency, 1.0)
+                return nav
+        # Non-OANDA (Kraken) path
         summary = api.get_account_summary()
         return float(summary.get("NAV", summary.get("balance", 100_000)))
     except Exception:
@@ -786,11 +812,12 @@ def main() -> None:
                 try:
                     resp = apis[bot_key].ctx.account.summary(creds["account_id"])
                     if resp.status == 200:
-                        acct = resp.body["account"]
-                        bal  = getattr(acct, "balance", "?")
-                        cur  = getattr(acct, "currency", "?")
-                        log.info("Account verified for %s: balance=%s currency=%s",
-                                 bot_key, bal, cur)
+                        acct    = resp.body["account"]
+                        bal     = getattr(acct, "balance", "?")
+                        cur     = getattr(acct, "currency", "USD")
+                        nav_usd = _get_nav(apis[bot_key])
+                        log.info("Account verified for %s: balance=%s %s (≈$%.2f USD)",
+                                 bot_key, bal, cur, nav_usd)
                     else:
                         log.error("Account check FAILED for %s: status=%s body=%s",
                                   bot_key, resp.status, resp.body)
