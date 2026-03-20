@@ -433,7 +433,8 @@ class CryptoMomentumStrategy(SafeguardsBase):
 
     def _fetch_h1_candles(self, instrument: str):
         end   = _utcnow()
-        start = end - timedelta(hours=config.CRYPTO_H1_MA_PERIOD + 10)
+        # Need 3× the EMA period to properly warm up; crypto is 24/7 so hours = bars
+        start = end - timedelta(hours=config.CRYPTO_H1_MA_PERIOD * 3)
         return oanda_history(self._api, instrument, start, end, "H1")
 
     # ── NAV helper ────────────────────────────────────────────────────────────

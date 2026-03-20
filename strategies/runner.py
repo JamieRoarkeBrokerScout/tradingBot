@@ -479,6 +479,21 @@ class Runner:
                             log.info("[runner] %s %s skipped — manual close cooldown active",
                                      name, sig.instrument)
                             continue
+                        # Cross-runner duplicate guard: if ANY runner (any user_id) already
+                        # has this strategy+instrument open in the DB, skip to avoid
+                        # double positions when multiple runners see the same signal.
+                        if action == "open":
+                            trade_key_check = f"{name}:{sig.instrument}"
+                            try:
+                                all_open = get_open_trades(user_id=None)
+                                if any(r.get("trade_key") == trade_key_check for r in all_open):
+                                    log.info("[runner] %s %s skipped — already open by another runner",
+                                             name, sig.instrument)
+                                    if hasattr(strategy, "_trades"):
+                                        strategy._trades.pop(sig.instrument, None)
+                                    continue
+                            except Exception:
+                                pass
                         if self.approve_signal(strategy, sig):
                             # OANDA CFD min is 1 unit — round up fractional orders; let
                             # OANDA reject with INSUFFICIENT_MARGIN if account is too small

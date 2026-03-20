@@ -80,7 +80,7 @@ CRYPTO_H1_MA_PERIOD    = 50          # H1 EMA-50 = ~2-day broad trend filter
 CRYPTO_RSI_LONG        = 52          # relaxed (was 55) — MACD+H1 filter compensates
 CRYPTO_RSI_SHORT       = 48          # relaxed (was 45)
 CRYPTO_RSI_EXIT        = 45          # exit long when RSI < 45; exit short when RSI > 55
-CRYPTO_CROSS_LOOKBACK  = 3           # accept RSI crossover within last N bars
+CRYPTO_CROSS_LOOKBACK  = 8           # accept RSI crossover within last N bars (8 × M15 = 2 h)
 CRYPTO_MACD_FAST       = 12          # MACD fast EMA
 CRYPTO_MACD_SLOW       = 26          # MACD slow EMA
 CRYPTO_MACD_SIGNAL     = 9           # MACD signal EMA
