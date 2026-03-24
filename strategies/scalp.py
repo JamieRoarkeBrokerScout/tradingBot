@@ -36,15 +36,18 @@ def _utcnow() -> datetime:
 
 @dataclass
 class _Trade:
-    instrument:  str
-    direction:   int
-    units:       float
-    entry_price: float
-    stop_price:  float
-    tp_price:    float
-    atr:         float
-    opened_at:   datetime = field(default_factory=_utcnow)
-    bar_count:   int = 0
+    instrument:   str
+    direction:    int
+    units:        float
+    entry_price:  float
+    stop_price:   float
+    tp_price:     float
+    atr:          float
+    opened_at:    datetime = field(default_factory=_utcnow)
+    bar_count:    int   = 0
+    trail_active: bool  = False
+    trail_stop:   float = 0.0
+    locked:       bool  = False
 
 
 class ScalpStrategy(SafeguardsBase):
@@ -90,16 +93,54 @@ class ScalpStrategy(SafeguardsBase):
             reason: Optional[str] = None
 
             if price is not None:
-                if trade.direction == +1:
-                    if price <= trade.stop_price:
-                        reason = "stop_loss"
-                    elif price >= trade.tp_price:
-                        reason = "take_profit"
-                else:
-                    if price >= trade.stop_price:
-                        reason = "stop_loss"
-                    elif price <= trade.tp_price:
-                        reason = "take_profit"
+                tp_dist   = abs(trade.tp_price - trade.entry_price)
+                gain      = (price - trade.entry_price) * trade.direction
+                pct_to_tp = gain / tp_dist if tp_dist > 0 else 0.0
+
+                # ── 80% profit lock: move stop to guarantee 60% of TP ─────
+                if not trade.locked and pct_to_tp >= config.SCALP_LOCK_PCT:
+                    floor_price = (trade.entry_price
+                                   + trade.direction * tp_dist * config.SCALP_LOCK_FLOOR_PCT)
+                    if trade.direction == +1:
+                        trade.stop_price = max(trade.stop_price, floor_price)
+                    else:
+                        trade.stop_price = min(trade.stop_price, floor_price)
+                    trade.locked = True
+                    log.info("[scalp] profit lock on %s — stop → %.5f", inst, trade.stop_price)
+
+                # ── Trailing stop: activates at 50% of TP ─────────────────
+                if not trade.trail_active and pct_to_tp >= config.SCALP_TRAIL_TRIGGER:
+                    trade.trail_active = True
+                    if trade.direction == +1:
+                        trade.trail_stop = price - config.SCALP_TRAIL_ATR_MULT * trade.atr
+                    else:
+                        trade.trail_stop = price + config.SCALP_TRAIL_ATR_MULT * trade.atr
+                    log.info("[scalp] trailing stop activated on %s trail=%.5f", inst, trade.trail_stop)
+
+                if trade.trail_active:
+                    if trade.direction == +1:
+                        trade.trail_stop = max(trade.trail_stop,
+                                               price - config.SCALP_TRAIL_ATR_MULT * trade.atr)
+                        if price <= trade.trail_stop:
+                            reason = "trailing_stop"
+                    else:
+                        trade.trail_stop = min(trade.trail_stop,
+                                               price + config.SCALP_TRAIL_ATR_MULT * trade.atr)
+                        if price >= trade.trail_stop:
+                            reason = "trailing_stop"
+
+                # ── Hard stop and TP ───────────────────────────────────────
+                if reason is None:
+                    if trade.direction == +1:
+                        if price <= trade.stop_price:
+                            reason = "stop_loss"
+                        elif price >= trade.tp_price:
+                            reason = "take_profit"
+                    else:
+                        if price >= trade.stop_price:
+                            reason = "stop_loss"
+                        elif price <= trade.tp_price:
+                            reason = "take_profit"
 
             if reason is None and trade.bar_count >= config.SCALP_MAX_AGE_BARS:
                 reason = "time_exit"

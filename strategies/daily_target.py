@@ -35,14 +35,17 @@ def _utcnow() -> datetime:
 
 @dataclass
 class _Trade:
-    instrument:  str
-    direction:   int
-    units:       float
-    entry_price: float
-    stop_price:  float
-    tp_price:    float
-    atr:         float
-    opened_at:   datetime = field(default_factory=_utcnow)
+    instrument:   str
+    direction:    int
+    units:        float
+    entry_price:  float
+    stop_price:   float
+    tp_price:     float
+    atr:          float
+    opened_at:    datetime = field(default_factory=_utcnow)
+    trail_active: bool  = False
+    trail_stop:   float = 0.0
+    locked:       bool  = False   # True once the 80% profit-lock fires
 
 
 class DailyTargetStrategy(SafeguardsBase):
@@ -171,22 +174,62 @@ class DailyTargetStrategy(SafeguardsBase):
             age_hours = (_utcnow() - trade.opened_at).total_seconds() / 3_600
             reason: Optional[str] = None
 
-            if trade.direction == +1:
-                if price <= trade.stop_price:
-                    reason = "stop_loss"
-                elif price >= trade.tp_price:
-                    reason = "take_profit"
-            else:
-                if price >= trade.stop_price:
-                    reason = "stop_loss"
-                elif price <= trade.tp_price:
-                    reason = "take_profit"
+            tp_dist = abs(trade.tp_price - trade.entry_price)
+            gain    = (price - trade.entry_price) * trade.direction
+            pct_to_tp = gain / tp_dist if tp_dist > 0 else 0.0
+
+            # ── 80% profit lock: move stop to guarantee 60% of TP ─────────
+            if not trade.locked and pct_to_tp >= config.DT_LOCK_PCT:
+                floor_price = trade.entry_price + trade.direction * tp_dist * config.DT_LOCK_FLOOR_PCT
+                if trade.direction == +1:
+                    trade.stop_price = max(trade.stop_price, floor_price)
+                else:
+                    trade.stop_price = min(trade.stop_price, floor_price)
+                trade.locked = True
+                log.info("[daily_target] profit lock on %s — stop moved to %.5f (%.0f%% of TP)",
+                         inst, trade.stop_price, config.DT_LOCK_FLOOR_PCT * 100)
+
+            # ── Trailing stop: activates at 50% of TP ─────────────────────
+            if not trade.trail_active and pct_to_tp >= config.DT_TRAIL_TRIGGER:
+                trade.trail_active = True
+                if trade.direction == +1:
+                    trade.trail_stop = price - config.DT_TRAIL_ATR_MULT * trade.atr
+                else:
+                    trade.trail_stop = price + config.DT_TRAIL_ATR_MULT * trade.atr
+                log.info("[daily_target] trailing stop activated on %s @ %.5f trail=%.5f",
+                         inst, price, trade.trail_stop)
+
+            if trade.trail_active:
+                if trade.direction == +1:
+                    new_trail = price - config.DT_TRAIL_ATR_MULT * trade.atr
+                    trade.trail_stop = max(trade.trail_stop, new_trail)
+                    if price <= trade.trail_stop:
+                        reason = "trailing_stop"
+                else:
+                    new_trail = price + config.DT_TRAIL_ATR_MULT * trade.atr
+                    trade.trail_stop = min(trade.trail_stop, new_trail)
+                    if price >= trade.trail_stop:
+                        reason = "trailing_stop"
+
+            # ── Hard stop and TP ───────────────────────────────────────────
+            if reason is None:
+                if trade.direction == +1:
+                    if price <= trade.stop_price:
+                        reason = "stop_loss"
+                    elif price >= trade.tp_price:
+                        reason = "take_profit"
+                else:
+                    if price >= trade.stop_price:
+                        reason = "stop_loss"
+                    elif price <= trade.tp_price:
+                        reason = "take_profit"
 
             if reason is None and age_hours > config.DT_MAX_AGE_HOURS:
                 reason = "time_exit"
 
             if reason:
-                log.info("[daily_target] exit %s reason=%s", inst, reason)
+                log.info("[daily_target] exit %s reason=%s price=%.5f pct_to_tp=%.1f%%",
+                         inst, reason, price, pct_to_tp * 100)
                 signals.append(Signal(
                     instrument=inst,
                     direction=-trade.direction,

@@ -118,6 +118,10 @@ DT_MIN_ATR_PCT      = 0.001   # 0.1% minimum volatility
 DT_MAX_OPEN         = 3
 DT_MIN_GAP_HOURS    = 1
 DT_MAX_AGE_HOURS    = 24
+DT_TRAIL_TRIGGER    = 0.50   # activate trailing stop once 50% of TP distance reached
+DT_TRAIL_ATR_MULT   = 1.0    # trail 1×ATR behind the current price peak/trough
+DT_LOCK_PCT         = 0.80   # at 80% to TP move stop to lock in 60% of TP distance
+DT_LOCK_FLOOR_PCT   = 0.60   # profit floor when 80% lock triggers
 
 # ─── Scalp (5-min high-frequency) ────────────────────────────────────────────
 # ~$200 account. Fast EMA crossover + RSI filter. High leverage, quick exits.
@@ -141,6 +145,10 @@ SCALP_MAX_AGE_BARS   = 6         # force-close after 30 min
 SCALP_MIN_ATR_PCT    = 0.0002    # skip only if completely flat
 SCALP_CROSS_LOOKBACK = 3         # accept EMA cross within last 3 bars (not just last bar)
 SCALP_MAX_LEVERAGE   = 15.0      # cap: OANDA margin for NAS100/XAU is 5% (20:1 max); 15× on $4k = ~2 units
+SCALP_TRAIL_TRIGGER  = 0.50      # activate trailing stop at 50% of TP distance
+SCALP_TRAIL_ATR_MULT = 0.5       # trail tightly at 0.5×ATR (scalp needs fast lock-in)
+SCALP_LOCK_PCT       = 0.80      # at 80% to TP lock in 60% of TP distance
+SCALP_LOCK_FLOOR_PCT = 0.60      # profit floor when 80% lock triggers
 
 # ─── OANDA / network ──────────────────────────────────────────────────────────
 OANDA_BACKOFF_BASE       = 1.0
