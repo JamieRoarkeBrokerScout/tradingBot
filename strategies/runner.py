@@ -74,6 +74,25 @@ _KF_INST = {
 
 # ─── OANDA helpers ────────────────────────────────────────────────────────────
 
+# OANDA price precision (decimal places) per instrument.
+# Indices allow 1 dp, metals 2 dp, FX 5 dp.
+_OANDA_PRICE_PRECISION: dict[str, int] = {
+    "NAS100_USD": 1,
+    "SPX500_USD": 1,
+    "US30_USD":   1,
+    "XAU_USD":    2,
+    "XAG_USD":    3,
+    "XCU_USD":    4,
+    "BCO_USD":    3,
+    # FX pairs default to 5 dp (handled by the fallback)
+}
+
+def _fmt_price(price: float, instrument: str) -> str:
+    """Format a price to the correct decimal precision for OANDA."""
+    dp = _OANDA_PRICE_PRECISION.get(instrument, 5)
+    return f"{price:.{dp}f}"
+
+
 def _get_mid_prices(api) -> dict[str, float]:
     prices: dict[str, float] = {}
     for inst in _PRICE_INSTRUMENTS:
@@ -219,12 +238,12 @@ def _submit(api, sig) -> bool:
             # them, the bot's next close attempt hits NO_UNITS_TO_CLOSEOUT → handled.
             if sig.tp_price and sig.tp_price > 0:
                 order_kwargs["takeProfitOnFill"] = {
-                    "price": "{:.5f}".format(sig.tp_price),
+                    "price": _fmt_price(sig.tp_price, sig.instrument),
                     "timeInForce": "GTC",
                 }
             if sig.stop_price and sig.stop_price > 0:
                 order_kwargs["stopLossOnFill"] = {
-                    "price": "{:.5f}".format(sig.stop_price),
+                    "price": _fmt_price(sig.stop_price, sig.instrument),
                     "timeInForce": "GTC",
                 }
             request = api.ctx.order.market(api.account_id, **order_kwargs)
