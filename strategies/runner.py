@@ -629,6 +629,8 @@ class Runner:
                                         strategy.record_fill(raw_pl)
                                     else:
                                         strategy.record_fill(0.0)
+                                    # Decrement _leverage (record_fill only decrements _open_pos)
+                                    strategy.on_position_close()
 
                 except Exception:
                     log.exception("[runner] error ticking strategy %s", name)

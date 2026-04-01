@@ -16,7 +16,7 @@ import logging
 import threading
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, time as dtime, timezone
+from datetime import date, datetime, time as dtime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,6 +32,7 @@ _open_pos: int      = 0
 _leverage: float    = 0.0
 _consec_loss: int   = 0
 _nav: float         = 0.0          # refreshed by runner every N seconds
+_last_reset_date: date = None      # tracks last UTC date _daily_pnl/_consec_loss were reset
 
 
 def _utcnow() -> datetime:
@@ -80,8 +81,16 @@ class SafeguardsBase:
         Called by the runner — strategies must not call this themselves;
         instead they return signals and let the runner gate them.
         """
-        global _halted, _daily_pnl, _open_pos, _leverage, _consec_loss, _nav
+        global _halted, _daily_pnl, _open_pos, _leverage, _consec_loss, _nav, _last_reset_date
         with _lock:
+            # Reset daily counters at UTC midnight so limits are genuinely daily.
+            today = _utcnow().date()
+            if _last_reset_date != today:
+                _daily_pnl   = 0.0
+                _consec_loss = 0
+                _last_reset_date = today
+                log.info("[safeguards] daily reset — _daily_pnl and _consec_loss cleared for %s", today)
+
             blocks: list[str] = []
 
             if _halted:
