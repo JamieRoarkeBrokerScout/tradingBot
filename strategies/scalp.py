@@ -270,16 +270,32 @@ class ScalpStrategy(SafeguardsBase):
         return oanda_history(self._api, instrument, start, end, config.SCALP_GRANULARITY)
 
     def _nav_safe(self) -> float:
-        """Read NAV from this strategy's own OANDA account (5-min cache)."""
+        """Read NAV from this strategy's own OANDA account, converted to USD (5-min cache)."""
         now = _utcnow()
         if (not hasattr(self, "_scalp_nav_cache")
                 or (now - getattr(self, "_scalp_nav_ts", now)).total_seconds() > 300):
             try:
-                summary = self._api.get_account_summary()
-                nav = float(summary.get("NAV", summary.get("balance", 0)) or 0)
-                if nav > 0:
-                    self._scalp_nav_cache: float = nav
-                    self._scalp_nav_ts = now
+                if hasattr(self._api, "ctx") and hasattr(self._api, "account_id"):
+                    resp = self._api.ctx.account.summary(self._api.account_id)
+                    if resp.status == 200:
+                        acct     = resp.body["account"]
+                        nav      = float(getattr(acct, "NAV", getattr(acct, "balance", 0)))
+                        currency = getattr(acct, "currency", "USD")
+                        if nav > 0 and currency != "USD":
+                            _RATES = {"CAD": 0.72, "EUR": 1.08, "GBP": 1.25,
+                                      "AUD": 0.64, "CHF": 1.10, "JPY": 0.0067}
+                            try:
+                                pair = f"USD_{currency}"
+                                _, _, rate = self._api.get_bid_ask_spread(pair)
+                                if rate and rate > 0:
+                                    nav = nav / rate
+                            except Exception:
+                                nav = nav * _RATES.get(currency, 1.0)
+                        if nav > 0:
+                            self._scalp_nav_cache: float = nav
+                            self._scalp_nav_ts = now
+                            log.info("[scalp] NAV updated: $%.2f USD (acct currency=%s)",
+                                     nav, currency)
             except Exception as exc:
                 log.warning("[scalp] NAV fetch failed: %s", exc)
         cached = getattr(self, "_scalp_nav_cache", 0.0)
